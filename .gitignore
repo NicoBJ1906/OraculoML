@@ -5,10 +5,21 @@ __pycache__/
 .venv/
 .ipynb_checkpoints/
 
-# Datos (no se versionan; se regeneran con los scripts de ingesta)
+# Datos: se versiona SOLO lo mínimo que la app necesita desplegada en
+# Streamlit Cloud (~7.5MB); el resto se regenera con los scripts 00-06
 data/raw/*
+!data/raw/international/
+data/raw/international/*
+!data/raw/international/results.csv
+!data/raw/worldcup2026/
+data/raw/worldcup2026/*
+!data/raw/worldcup2026/worldcup.json
 data/interim/*
+!data/interim/matches.parquet
+!data/interim/teams_2026.parquet
 data/processed/*
+!data/processed/features.parquet
+!data/processed/rosters_2026.parquet
 # Datos dinámicos del torneo (estado personal, se crean desde la UI)
 data/live/*
 !data/**/.gitkeep
@@ -17,6 +28,7 @@ data/live/*
 mlruns/
 *.joblib
 *.pkl
+!models/artifacts.joblib
 
 # Secretos
 .env
