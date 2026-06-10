@@ -523,6 +523,10 @@ div[data-testid="stInfo"] {background: var(--surface) !important; color: var(--t
 div[data-testid="stSuccess"] {background: var(--surface) !important; color: var(--accent2) !important;}
 div[data-testid="stError"] {background: var(--surface) !important;}
 
+/* ---- sin hint "Press Enter to submit form" en inputs ---- */
+div[data-testid="InputInstructions"],
+span[data-testid="InputInstructions"] {display: none !important;}
+
 /* ---- checkboxes / toggles ---- */
 div[data-testid="stCheckbox"] label span {font-weight: 600;}
 .stToggle {gap: 8px;}
