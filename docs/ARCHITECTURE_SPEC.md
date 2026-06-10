@@ -206,8 +206,14 @@ la app sigue 100% funcional.
 - `src1`/`src2`: num de la llave previa que alimenta cada lado (null en R32)
   — el template dibuja los conectores SVG con este mapeo, nunca por posición.
 - `pwin`: P(%) de que `win` avance en ESTE cruce concreto (determinismo U4).
-- `pct` puede ser null (ocupante determinista fuera del top-3 del Monte
-  Carlo); el template omite el porcentaje en ese caso.
+- `pct` puede ser null (cruce sin resolver); el template omite el
+  porcentaje en ese caso.
+- **Semántica de `pct` (U4-display)**: en cada llave, `t1.pct`/`t2.pct` es
+  la probabilidad de AVANZAR EN ESE CRUCE concreto (suman ~100), NO la
+  probabilidad marginal de ocupar la llave. Mostrar la ocupación marginal
+  junto al ganador del cruce confunde (un equipo puede ser menos frecuente
+  en el slot y aun así ser favorito del head-to-head). La ocupación
+  marginal vive solo en `cands1/cands2` (modo foco, "Alt:").
 
 ### Contrato de theming (frontend)
 
@@ -235,6 +241,28 @@ la app sigue 100% funcional.
   (`auth.login_entry`). NO usa `st.sidebar`: el header nativo de Streamlit
   está oculto por CSS y se llevaba consigo el control de re-expandir el
   sidebar (bug conocido).
+- Invariante R2 (no-leak): el flujo de login NUNCA muestra en pantalla
+  detalles de configuración (rutas de secrets, nombres de claves,
+  plantillas TOML) ni distingue entre "clave incorrecta" y "auth sin
+  configurar" — siempre el mismo "Acceso denegado." genérico. Las
+  instrucciones de despliegue viven en docs/CLAUDE.md, no en la UI.
+- Invariante S3 (sanitización en el boundary de persistencia):
+  `LiveStore.add_match` sanitiza todo texto libre (jugadores, formaciones)
+  antes de escribir a CSV — sin caracteres de control, sin prefijos de
+  fórmula (`= + - @`, anti CSV-injection en Excel/Sheets), longitud
+  acotada. El escape HTML en display (`esc()`) se mantiene como segunda
+  capa.
+
+## 9. Tab "Auditoría" (backtesting visual)
+
+- Selector de selección → últimos 5 partidos JUGADOS desde la capa Gold
+  (`features.parquet`, features pre-partido con anti-leakage verificado).
+- Para cada partido se reconstruye la predicción pre-partido con los
+  artefactos entrenados (mismo ensemble blend·clf + (1-blend)·Poisson DC
+  que producción) — NUNCA con el Elo actual del engine (sería leakage).
+- Card por partido: fecha, rival, P(victoria) del equipo elegido,
+  marcador real y ✓/✗ si el argmax 1X2 del modelo coincidió con el
+  resultado. Tematizado con las CSS vars (dark/light).
 
 ### 2.4 Gold: `rosters_2026.parquet` (plantillas normalizadas)
 

@@ -1,212 +1,225 @@
-# Mundial 2026 ML — Estado del proyecto
+# CLAUDE.md — OráculoML · Mundial 2026
 
-Contexto para Claude Code. Última sesión de trabajo: 2026-06-09 (dos días antes
-del arranque del Mundial, 11/jun/2026). Refactor mayor: capa live completa
-(Feature State Updating + Online Learning) y UI con temas.
+Contexto operativo para el agente **OráculoML** (AI Engineering + Frontend
+Architecture de este proyecto). Última actualización: 2026-06-10, víspera
+del Mundial (arranca 11/jun/2026).
 
-## Qué es
+## 0. Identidad y metodología del agente (OráculoML)
 
-Predictor del Mundial 2026: ensemble **Logistic Regression (0.8) + Poisson
-Dixon-Coles (0.2, rho=-0.15)** sobre data lake medallion local
-(raw → interim → processed → live). UI Streamlit con temas dark (negro+rojo,
-aurora animada) y light minimalista, ingesta en vivo extendida (xG,
-goleadores, asistencias, tarjetas, lesiones, clima, formación) y
-reevaluación dinámica sin reentrenar.
+- **Rol**: agente autónomo senior para gestionar, depurar y escalar este
+  predictor. Responde en español, directo, código antes que explicación.
+- **MCPs disponibles y cuándo usarlos**:
+  - `playwright` — inspección de UI real en `localhost:8501` (snapshots
+    DOM, screenshots dark/light, responsividad). Usarlo para VALIDAR, no
+    para adivinar CSS; minimizar pasadas (una validación final por lote).
+  - `memory` — grafo de conocimiento persistente. Consultar
+    (`search_nodes`) antes de soluciones complejas para no repetir errores
+    ni romper integraciones; registrar (`add_observations`) decisiones
+    arquitectónicas y bugs resueltos al cerrar cada lote.
+  - `sequential-thinking` — razonamiento estructurado en refactors grandes.
+- **Skill estricta — Spec-Driven Development (SDD)**. Pipeline obligatorio
+  ante cualquier bug o feature:
+  1. **[DIAGNÓSTICO]** — Playwright si es UI; logs (`logs/app.log`) y
+     lectura de código si es ML. Consultar memoria MCP.
+  2. **[SPEC-UPDATE]** — documentar la solución en
+     `docs/ARCHITECTURE_SPEC.md` ANTES de tocar código (los invariantes
+     S1-S3, L1-L2, M2, O1-O2, U1-U4, R1-R2 mandan).
+  3. **[TEST-FIRST]** — escribir el test pytest que valida la corrección.
+  4. **[IMPLEMENTACIÓN]** — código limpio, sin improvisar.
+  5. **[VERIFICACIÓN]** — ruff + pytest verdes, validación visual si
+     aplica, y registrar el aprendizaje en la memoria MCP.
+- Prohibido: programar sin spec, hardcodear colores en el frontend,
+  hardcodear credenciales, comitear secrets, push sin preguntar.
 
-## Cómo se usa
+## 1. Qué es
+
+Predictor del Mundial 2026: ensemble **Regresión Logística (0.8) +
+Poisson Dixon-Coles (0.2, ρ=-0.15)** sobre data lake medallion local.
+UI Streamlit con temas dark/light en runtime, ingesta en vivo extendida,
+reevaluación dinámica sin reentrenar (Feature State Updating + Online
+Learning), bracket determinista y backtesting visual.
+
+## 2. Arquitectura de directorios (Medallion + frontend inyectado)
+
+```
+mundial-2026-ml/
+├── app.py                      # UI Streamlit (única entrada en producción)
+├── data/
+│   ├── raw/                    # BRONZE: martj42 + openfootball (NUNCA editar)
+│   │   ├── international/      #   results/goalscorers/shootouts/former_names
+│   │   └── worldcup2026/       #   worldcup.json (fixtures+bracket), teams, stadiums
+│   ├── interim/                # SILVER: matches.parquet, teams_2026, goalscorers…
+│   │   └── matches_consolidated.parquet   # silver + live (script 05)
+│   ├── processed/              # GOLD: features.parquet (34 cols, anti-leakage),
+│   │                           #   rosters_2026.parquet (dropdowns anti-typo)
+│   └── live/                   # LIVE: 4 CSV del torneo (results/players/
+│                               #   discipline/injuries) — LiveStore
+├── models/artifacts.joblib     # clf + pois_home/away + rho + blend (gitignored)
+├── scripts/                    # pipeline numerado 00→06 (ver comandos)
+├── src/
+│   ├── frontend/               # SPA inyectado: inject.py + templates/
+│   │   └── templates/          #   effects.html (Lenis/GSAP/Three.js),
+│   │                           #   bracket.html (cuadro interactivo + SVG)
+│   └── mundial/
+│       ├── auth.py             # RBAC viewer/admin (modal, fail-closed)
+│       ├── features/           # build.py (features batch), elo.py
+│       ├── models/             # baseline.py (FEATURES, clf), poisson.py
+│       ├── predict/            # engine (PredictionEngine), montecarlo.py
+│       └── live/               # store.py / state.py / online.py / engine.py
+├── tests/                      # pytest (27 verdes) — usan tmp_path, no data/
+├── docs/ARCHITECTURE_SPEC.md   # FUENTE DE VERDAD (SDD)
+├── logs/app.log                # logging runtime (gitignored)
+└── .github/workflows/ci.yml    # ruff + bandit + pip-audit + pytest
+```
+
+## 3. Comandos frecuentes
 
 ```bash
 # UI (lo único necesario durante el Mundial)
 .venv/Scripts/python.exe -m streamlit run app.py
 
-# refrescar datos + reentrenar (opcional, antes del torneo o entre fases)
-python scripts/00_download_tier0.py   # martj42 se actualiza a diario
-python scripts/01_build_silver.py
-python scripts/02_build_features.py
-python scripts/04_train_final.py      # guarda models/artifacts.joblib
-python scripts/05_consolidate_live.py # histórico+live -> matches_consolidated.parquet
+# Calidad (lo que corre el CI)
+.venv/Scripts/ruff check app.py src/ scripts/ tests/
+.venv/Scripts/bandit -r app.py src/ -q
+.venv/Scripts/pip-audit --skip-editable
+.venv/Scripts/python -m pytest          # pythonpath=src vía pyproject
+
+# Refrescar data lake + reentrenar (martj42 se actualiza a diario)
+python scripts/00_download_tier0.py     # Bronze
+python scripts/01_build_silver.py       # Silver
+python scripts/02_build_features.py     # Gold (anti-leakage checks)
+python scripts/04_train_final.py        # artifacts.joblib
+python scripts/05_consolidate_live.py   # silver+live consolidado
+python scripts/06_build_rosters.py      # rosters Gold
+
+# Smoke test sin browser (ejecuta TODO el script en bare mode)
+.venv/Scripts/python -c "import app"
 ```
 
-Durante el torneo: pestaña **Ingresar resultado** → `LiveEngine`
-(`src/mundial/live/engine.py`) actualiza Elo/forma/H2H + momentum/sanciones
-/lesiones + corrección online y recalcula todo (cards, bracket, Monte Carlo).
+## 4. Convenciones de código
 
-## Capa live (src/mundial/live/) — datos en data/live/
+- Python 3.12, type hints en firmas públicas (`from __future__ import
+  annotations`), docstrings en español explicando el PORQUÉ.
+- Ruff limpio (config en `pyproject.toml`; `app.py` exenta de E402 por el
+  `sys.path.insert` necesario). Líneas ≤ 100.
+- SOLID pragmático: módulos chicos con una responsabilidad (store =
+  persistencia, state = ajustes Elo, online = corrección bayesiana,
+  engine = orquestación). La UI no contiene lógica de modelo.
+- Sorts con `kind="stable"` (determinismo). Funciones puras donde se pueda
+  (`rank_group`, `sanitize_text`) para testear sin Streamlit.
+- Streamlit: cachés siempre keyed por `STORE.token()` cuando dependen de
+  data live (invariante U2). Widgets con `key` explícito en formularios.
 
-- `store.py`  : 4 CSV (live_results con xG/clima/formación/ko_winner,
-  live_players, live_discipline, live_injuries). `delete_match()` borra en
-  cascada. `token()` invalida cachés de Streamlit. raw/interim nunca se pisan.
-- `state.py`  : ajustes Elo SOLO en predicción — momentum (K_LIVE=45 extra
-  sobre el K=30 base, margen efectivo goles/xG), suspensiones FIFA (roja o
-  2 amarillas => 1 partido; amarillas se limpian tras cuartos), lesiones
-  (un partido / resto del torneo). Heurísticas: -9/-7/-14 Elo, tope -45.
-- `online.py` : corrección con shrinkage bayesiano, factores=1.0 con 0
-  partidos — gamma de goles (prior 20 xG), multiplicador de empates (prior
-  25 partidos), altitud >=1400m (CDMX/Guadalajara, prior 1.05). Usa xG
-  ingresado (blend 0.65 goles / 0.35 xG). NUNCA hace model.fit().
-- `engine.py` : LiveEngine(PredictionEngine) — replay live registrando
-  predicciones pre-partido honestas para el corrector (hooks apagados
-  durante el replay, sin leakage).
+## 5. Motor ML (resumen para no romperlo)
 
-`PredictionEngine` ganó 3 hooks no-op (elo_for, _adjust_lambdas,
-_adjust_probs) — el engine base sigue siendo bit-a-bit el de entrenamiento.
+- **Features pre-partido** (Gold): Elo (K=30 plano, base 1500), forma
+  (pts/gf/gc últimos 5), H2H, descanso, experiencia. `PredictionEngine`
+  replica EXACTAMENTE las features batch de `features/build.py` —
+  verificado numéricamente; si cambias una feature, cambia ambos lados.
+- **Ensemble**: `blend(0.8)·predict_proba(clf) + 0.2·outcome_probs(
+  score_matrix(λh, λa, ρ=-0.15))`, clases en orden `['A','D','H']`.
+  La matriz de marcadores se reescala para que sus marginales 1X2
+  coincidan con el ensemble (coherencia card/porcentajes).
+- **Capa live** (sin reentrenar): momentum K_LIVE=45 sobre el Elo,
+  suspensiones FIFA (roja o 2 amarillas; amarillas se limpian tras
+  cuartos), lesiones (-9/-7/-14 Elo, tope -45), corrección bayesiana con
+  shrinkage (γ goles prior 20 xG, empates prior 25, altitud ≥1400m
+  prior 1.05; xG blend 0.65 goles/0.35 xG). NUNCA `model.fit()` en vivo.
+- **Qué usa el modelo de la ingesta**: goles/xG → momentum y γ; tarjetas →
+  suspensiones; lesiones → ajuste Elo. **Clima y formación = SOLO
+  metadatos** (así está etiquetado en la UI; si algún día entran como
+  features → reentrenar y actualizar spec §4).
+- **Bracket determinista (U4)**: entrantes a R32 = ocupante modal del
+  Monte Carlo; desde ahí avanza el de `p_advances > 50%` en CADA cruce
+  (`engine.predict_match`), o el ganador real ingresado. Las marginales de
+  `slot_stats` NO componen entre rondas; los pct visibles de cada llave
+  son P(avanzar en ese cruce) (U4-display), la ocupación marginal vive en
+  "Alt:" del modo foco.
+- **Monte Carlo**: `rank_group` aplica desempate FIFA Pts→DG→GF→H2H→azar;
+  mejores 8 terceros greedy por slots permitidos; prórroga/penales por Elo.
+- **Backtesting (tab Auditoría, spec §9)**: SIEMPRE desde features Gold +
+  artifacts (pre-partido); nunca con el Elo actual del engine (leakage).
 
-## Estado y métricas (validación temporal, test 2022+, n=4519)
+## 6. Seguridad
 
-- Acierto 1X2: **0.602** | log-loss 0.867 (baseline local: 0.477 / 1.051)
-- Marcador exacto de la card: **13.1%** (referencia siempre-1-0: 10.8%)
-- **Calibración casi perfecta** verificada por buckets (dice 80% → acierta 80%)
-- Torneos grandes (WC/Euro/Copa América): ~53% — techo del estado del arte
-- Hold-out Mundial 2022: 54.7%
-- Datos hasta 2026-06-08; los 72 fixtures de grupos vienen en results.csv con
-  scores NA y flag `neutral` correcto (anfitriones USA/MEX/CAN = False)
+- RBAC fail-closed: sin secrets ⇒ viewer permanente. Clave en
+  `st.secrets["admin_password"]` (top-level; `[auth]` aceptado por compat).
+  `hmac.compare_digest`. El tab de ingesta NO se construye para viewers.
+- Invariante R2: el login nunca muestra detalles de configuración ni
+  distingue clave-incorrecta vs auth-sin-configurar ("Acceso denegado.");
+  el motivo va solo a `logs/app.log`.
+- Invariante S3: `LiveStore.add_match` sanitiza texto libre
+  (`sanitize_text`: control chars, prefijos de fórmula `=+-@`, 120 chars)
+  — anti CSV-injection. El display además escapa HTML (`esc()`).
+- `.streamlit/secrets.toml` y `logs/` gitignored; verificado que nunca se
+  versionaron. La clave NUNCA va en archivos versionados ni en la UI.
+- CI (`.github/workflows/ci.yml`): ruff + bandit (0 hallazgos) +
+  pip-audit (0 CVEs al 2026-06-10) + pytest.
 
-## Decisiones técnicas clave (no romper)
+## 7. Despliegue (Streamlit Community Cloud)
 
-- `PredictionEngine` replica EXACTAMENTE las features batch de
-  `features/build.py` (verificado numéricamente). Si cambias una feature,
-  cambia ambos lados. Sorts con `kind="stable"` para determinismo.
-- `predict_match` reescala la matriz de marcadores para que sus marginales 1X2
-  coincidan con el ensemble (coherencia card/porcentajes) y expone
-  `score_pred` = marcador más probable DEL resultado predicho (lo que muestra
-  la card). Sin esto, 35/72 cards contradecían sus propios porcentajes.
-- Corrección Dixon-Coles con clip a 0 (rho grande puede dar prob. negativas).
-- Elo: K=30 plano (consistente con el entrenamiento; no subir a 60 en WC sin
-  reentrenar todo).
-- Banderas vía **flagcdn.com** (`FLAG_ISO` en app.py): los emojis de bandera
-  NO renderizan en Windows. flagcdn solo tiene anchos w40/w80/w160/w320
-  (w60 da 404 — `flag_img` mapea al más cercano).
-- UI 2026-06-09: temas light/dark con CSS variables (`PALETTES` +
-  `BASE_CSS`), toggle "Modo claro" en runtime, aurora animada. Las tablas
-  de display son HTML propio (`tbl()`) porque st.dataframe no se puede
-  tematizar en runtime. Los st.data_editor del formulario (canvas) siguen
-  el tema de `.streamlit/config.toml` (dark) — limitación conocida en modo
-  claro, solo afecta el formulario.
-- Tab Cuadro: bracket con ocupante más probable por llave; el simulador
-  trackea `slot_stats` (top-3 candidatos por lado + ganador por llave) y
-  respeta resultados KO ya ingresados (`ko_actual` por par de equipos,
-  con `ko_winner` para empates resueltos por penales).
-- Empates: el modelo les asigna la probabilidad correcta (23% medio = 23%
-  real) pero casi nunca son argmax — comportamiento esperado, no es bug.
+- Clave admin: share.streamlit.io → app → Settings → Secrets →
+  `admin_password = "..."` (mismo formato que el secrets.toml local).
+- OJO: `models/artifacts.joblib` y `data/` están gitignored — para Cloud
+  hay que decidir: versionarlos, regenerar en arranque o storage externo
+  (PENDIENTE de decisión del usuario).
+- `st.components.v1.html` está deprecado (aviso: se elimina tras
+  2026-06-01, fecha vencida) — migrar a `st.iframe` pronto.
 
-## Datos: qué hay y qué NO hay (auditado 2026-06-09)
+## 8. Decisiones clave / gotchas (no romper)
 
-- HAY: resultados 1872→hoy (49.450), goleadores históricos con minuto/
-  penal/autogol (47.601, hasta mar-2026, SIN asistencias), shootouts,
-  fixtures y bracket 2026, estadios (sin altitud — hardcodeada en
-  `online.py:ALTITUDE_M`).
-- NO HAY histórico de: xG, tarjetas, lesiones, clima, alineaciones. Por
-  eso NO son features entrenadas: entran como ajustes en vivo (state +
-  online). Si algún día se integra StatsBomb/API-Football, ahí sí podrían
-  ser features y habría que reentrenar.
-
-## Sesión 2026-06-09 (noche) — producción y publicación
-
-- **SDD**: `docs/ARCHITECTURE_SPEC.md` es la fuente de verdad (contratos e
-  invariantes S1/S2, L1/L2, M2, O1/O2). Cambios de código que los violen
-  deben actualizar el spec primero.
-- **Tests**: 19 pytest en verde (`tests/`): sanciones/lesiones/reset de
-  amarillas, consolidación con dedup, desempate H2H. `pyproject.toml` define
-  `pythonpath=["src"]`. Correr con `.venv/Scripts/python -m pytest`.
-- **XAI**: `TournamentState.explain(team, date)` → momentum + items con
-  etiqueta y puntos. UI: chip "Δ EN VIVO" en cards, expander de desglose en
-  Próximos, detalle por equipo en Eliminatorias.
-- **Editores de captura**: `dynamic_rows()` con widgets DOM (st.data_editor
-  canvas eliminado — no se podía tematizar). Al guardar se limpian via
-  `rows_{ev,cd,in}_{prefix}` en session_state.
-- **Monte Carlo**: `rank_group()` (función pura) aplica desempate FIFA
-  completo Pts→DG→GF→H2H entre empatados→azar.
-- **GitHub**: repo privado `NicoBJ1906/mundial-2026-ml`, rama main. `gh` NO
-  está instalado: usar API REST con `$GITHUB_TOKEN` y push con
+- Banderas vía flagcdn (`FLAG_ISO`); solo anchos w40/80/160/320. En cards
+  se normalizan a 40×26 `object-fit: cover` (alturas nativas distintas).
+- Emojis de bandera NO renderizan en Windows; Material icons necesitan
+  excluirse del font-override global (`span[data-testid="stIconMaterial"]`
+  → 'Material Symbols Rounded', si no se ve "keyboard_arrow_down" texto).
+- Theming: vars propias (`--bg/--text/--accent/…`) inyectadas en `:root`
+  por `inject_theme()`; NO usar las nativas de Streamlit (`--text-color`)
+  — no cambian con el toggle runtime. Los iframes parsean el último
+  `<style>` con `--bg:` del BODY padre + MutationObserver (characterData);
+  además copian el `color-scheme` del padre (si difiere, el browser fuerza
+  canvas opaco = recuadro negro).
+- Modales: baseweb los porta con tema de config.toml (dark) → CSS fuerza
+  `var(--surface-solid)` en `stDialog`/`[data-baseweb="modal"]`/KaTeX.
+- Paneles que envuelven widgets: `st.container(border=True)` (los `<div>`
+  abiertos/cerrados en markdowns separados NO contienen nada).
+- Tabla de resultados ingresados: nombres de columna ÚNICOS (con
+  duplicados `r[c]` devuelve una Series y la celda imprime basura).
+- Si tras editar módulos de `src/` la app "pierde" funciones nuevas:
+  reiniciar streamlit (el proceso viejo cachea los imports).
+- Empates: el modelo les da probabilidad correcta pero casi nunca argmax —
+  esperado, no es bug. Expectativa honesta: 55-60% acierto 1X2 es el techo
+  del estado del arte; el valor real es la calibración.
+- `gh` CLI NO instalado: API REST con `$GITHUB_TOKEN`; push con
   `git -c http.extraHeader="Authorization: Basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"`
-  (nunca persistir el token en .git/config).
-- `.streamlit/config.toml` ahora en paleta roja (#ff2d55) para que los
-  widgets nativos coincidan con el tema dark.
+  (nunca persistir el token en .git/config). Repo: NicoBJ1906/mundial-2026-ml.
 
-## Sesión 2026-06-10 — frontend SPA, bracket, RBAC, rosters
+## 9. Estado y métricas (modelo del 2026-06-10, datos al 2026-06-09)
 
-- `src/frontend/`: effects.html (Lenis+GSAP+Three.js liquid gradient) y
-  bracket.html (componente autocontenido: filtro de fases con GSAP elastic,
-  modo foco con grid). Inyectados vía components.html (iframe same-origin).
-- **Theming de iframes (CLAVE)**: el `<style>` de `:root` que inyecta
-  st.markdown vive en el BODY del padre (no en head) y Streamlit lo muta
-  como characterData. Los componentes parsean las vars del último <style>
-  con `--bg:` y se re-aplican con MutationObserver sobre `PD.body`
-  {childList, subtree, characterData} con debounce rAF. NO usar
-  getComputedStyle solo (devuelve valores viejos en el rerun).
-- Bracket viejo con margin-math eliminado (era el daño principal).
-- RBAC (`mundial/auth.py`): viewer default, admin con clave de
-  `.streamlit/secrets.toml` (gitignored — la clave NUNCA va en archivos
-  versionados; verla en el propio secrets.toml local). El tab Ingresar
-  no se construye para viewers.
-- Rosters Gold: `scripts/06_build_rosters.py` → rosters_2026.parquet
-  (825 jugadores desde goalscorers 2022+). Dropdowns anti-typos con "Otro…".
-- XAI dialog: sección pedagógica de Elo con st.latex.
-- 23 tests verdes. Push: usar el extraHeader Basic documentado arriba.
+- Entrenado con 15.618 partidos · test temporal 2022+ (4.541): acierto
+  1X2 **0.602**, log-loss 0.867 · hold-out Mundial 2022: 0.547 ·
+  calibración por buckets casi perfecta · marcador exacto card 13.1%.
+- 27 tests pytest verdes · ruff/bandit/pip-audit limpios.
+- Tabs: Próximos (jornadas reales) · [Ingresar resultado] · Líderes ·
+  Cuadro (determinista + conectores SVG) · Eliminatorias · Camino al
+  título · Tablas · Auditoría (backtesting últimos 5 por selección).
 
-## Sesión 2026-06-10 (tarde) — hotfix UI + determinismo del Cuadro
+## 10. Historial condensado de sesiones
 
-- **Login sin sidebar**: `auth.login_entry()` (botón en header → `st.dialog`).
-  Causa raíz: el CSS oculta `header[data-testid="stHeader"]` y se llevaba el
-  control de re-expandir el sidebar. El sidebar ya no se usa; el CSS deja
-  visible `stSidebarCollapsedControl` por si algo vuelve a renderizar ahí.
-- **Cuadro determinista (invariante U4 del spec)**: `build_bracket_payload`
-  (cacheada, app.py) — entrantes a R32 = ocupante modal del Monte Carlo; de
-  ahí en adelante avanza el de `p_advances > 50%` vía `engine.predict_match`
-  (o el ganador real ingresado). Las marginales de `slot_stats` NO componen
-  entre rondas; solo se usan para los pct. Payload ganó `num/src1/src2/pwin`.
-- **Conectores del bracket**: SVG overlay en bracket.html, mapeado por
-  `src1/src2` (num de llave), NUNCA por posición (el orden visual no
-  coincide con los cruces, ej. llave 89 = W74 vs W77).
-- **Recuadro negro del bracket en modo claro**: causa = `color-scheme` del
-  iframe distinto al del embedder → el browser fuerza canvas opaco.
-  Fix: `applyTheme()` copia el `colorScheme` computado del body padre.
-- **Filtro de Próximos**: jornadas derivadas del calendario real (el n-ésimo
-  partido de cada equipo es su Fecha n), con rango de fechas en el label.
-- **Podio**: clases `.podium-pct`/`.podium-lbl` (la vieja `mc-score` no
-  existía en el CSS — por eso "34%campeón" salía pegado).
-- Smoke test sin Playwright: `python -c "import app"` (bare mode) +
-  validación de consistencia del payload. 23 tests verdes.
-- **Logging**: `logs/app.log` (RotatingFileHandler, logger raíz "mundial").
-  Registra: carga de artifacts, build del engine, Monte Carlo (n y tiempo),
-  bracket determinista, login OK/fallido (nunca la clave), guardar/borrar
-  resultados. logs/ está gitignored.
-- **Validación E2E con Playwright (2026-06-10)**: tabs, login modal → tab
-  Ingresar aparece, jornadas reales (Fecha 1 = 24 partidos 11-17 jun),
-  bracket determinista verificado en UI (Colombia 37% vs Croatia 45% de
-  ocupar la llave → "Avanza Colombia · 65% en este cruce"), modo claro sin
-  recuadro negro, conectores visibles, podio espaciado, guardar+borrar
-  resultado con recálculo. 0 errores de consola.
-- Fix tabla "Resultados ingresados": columnas renombradas a nombres ÚNICOS
-  (GL/GV, xG (L)/(V)) — con nombres duplicados `r[c]` devuelve una Series
-  y la celda imprimía "Name: 0, dtype: object".
-- OJO si la app "pierde" funciones nuevas de módulos de src/ tras editar:
-  reiniciar streamlit — el proceso viejo mantiene los módulos importados
-  en caché (el AttributeError de login_entry fue eso, no un bug).
+- **06-09**: capa live completa (store/state/online/engine), temas
+  dark/light, spec SDD, 19 tests, XAI, H2H FIFA, publicación GitHub.
+- **06-10 (mañana)**: frontend SPA (Lenis/GSAP/Three.js), bracket
+  interactivo, RBAC, rosters Gold, XAI pedagógico (st.latex), 23 tests.
+- **06-10 (tarde)**: login a modal (sidebar roto por header oculto),
+  bracket determinista U4 + conectores SVG, jornadas reales, fix
+  color-scheme iframes, logging, pipeline corrido (modelo 15.618),
+  secrets formato Cloud, CI + ruff/bandit/pip-audit, fix CSV-injection
+  (S3), login sin fugas (R2), badges "solo metadatos", pct del bracket =
+  P(avanza del cruce) (U4-display), tab Auditoría (spec §9).
 
-## Sesión 2026-06-10 (cierre) — data lake al día + secrets para Cloud
+## 11. Pendiente / ideas
 
-- **Pipeline corrido completo** (00→01→02→04→05→06): datos hasta
-  2026-06-09, 49.398 partidos silver (+22), modelo reentrenado con 15.618
-  (acc 0.602 / log-loss 0.867 / WC2022 hold-out 0.547 — estable), rosters
-  regenerados. El Elo base ya incluye los amistosos de la víspera.
-- **Secrets formato Cloud**: `st.secrets["admin_password"]` top-level
-  (mismo formato local y en Community Cloud → Settings → Secrets);
-  `[auth].admin_password` sigue aceptado. La clave local vive SOLO en
-  `.streamlit/secrets.toml`. El modal admin muestra un st.info temporal
-  con las instrucciones de despliegue (TODO: quitarlo al abrir al público).
-- **CSS**: date picker (st.date_input, tab Eliminatorias) y modal de login
-  variabilizados — cero colores quemados, funcionan en dark y light. Se
-  usan las vars propias (`--text/--bg/...`) y NO las nativas de Streamlit
-  (`--text-color`): las nativas vienen de config.toml y no cambian con el
-  toggle runtime de tema.
-- OJO: Streamlit avisa que `st.components.v1.html` se elimina después de
-  2026-06-01 (fecha ya vencida) — migrar a `st.iframe` pronto.
-
-## Pendiente / ideas
-
-- `tests/` y `evaluate/` siguen vacíos (los chequeos viven en los scripts).
+- Decidir estrategia de artifacts/data para Community Cloud (ver §7).
+- Migrar `components.html` → `st.iframe`.
 - Sprints 3-4 del PLAN (API-Football, StatsBomb xG) sin empezar.
-- Migrar `components.html` → `st.iframe` (deprecación vencida, ver arriba).
-- Expectativa del usuario: "predicciones altas" — ya se le explicó que
-  55-60% en 1X2 es el techo honesto; el valor real está en la calibración.
+- `evaluate/` vacío (los chequeos viven en scripts y en el tab Auditoría).

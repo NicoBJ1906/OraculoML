@@ -34,6 +34,7 @@ if not _LOGROOT.handlers:
 LOG = logging.getLogger("mundial.app")
 
 import joblib
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -222,7 +223,10 @@ hr {border-color: var(--border) !important;}
 .mc-team {flex: 1; text-align: center; font-weight: 600; font-size: .85rem;
           color: var(--text); line-height: 1.2;}
 .mc-team .flag {display: block; margin-bottom: 4px;}
-.mc-team .flag img {filter: drop-shadow(0 4px 12px var(--shadow));}
+/* tamaño ESTRICTO: los PNG de flagcdn traen alturas distintas por país
+   y descuadran las cards — se normalizan a 40x26 recortando */
+.mc-team .flag img {width: 40px; height: 26px; object-fit: cover;
+  border-radius: 4px; filter: drop-shadow(0 4px 12px var(--shadow));}
 .mc-probs-wrap {display: flex; justify-content: space-between; align-items: baseline;
                 margin-top: 12px; gap: 6px;}
 .mc-prob-block {text-align: center; flex: 1;}
@@ -288,15 +292,6 @@ div[data-testid="stDialog"] div[data-testid="stMarkdownContainer"] p {color: var
 .xai-stat.neg .value {color: var(--bar-a1);}
 .xai-divider {height: 1px; background: var(--border); margin: 8px 0;}
 
-/* ---- box pedagógico Elo (glassmorphism) ---- */
-.elo-tooltip-box {
-  background: color-mix(in srgb, var(--surface-solid) 75%, transparent);
-  backdrop-filter: blur(22px) saturate(150%);
-  border: 1px solid var(--border); border-radius: 18px;
-  padding: 20px 24px; margin: 4px 0 8px 0; color: var(--text);
-  box-shadow: 0 10px 38px var(--shadow);}
-.elo-tooltip-box p, .elo-tooltip-box li {color: var(--text) !important;}
-
 /* ---- slider de horizonte: separación de las tarjetas ---- */
 div[data-testid="stSlider"] {margin-bottom: 32px; padding-top: 34px;}
 div[data-testid="stSliderThumbValue"] {
@@ -316,6 +311,13 @@ div[data-testid="stDialog"] > div, div[role="dialog"] {
 div[data-testid="stDialog"] p, div[data-testid="stDialog"] span,
 div[data-testid="stDialog"] label, div[role="dialog"] h1,
 div[role="dialog"] h2, div[role="dialog"] h3 {color: var(--text) !important;}
+/* baseweb renderiza el modal en un portal con el tema base (dark de
+   config.toml): forzar TODA la cadena a las vars para que el modal siga
+   el tema activo y no "se pase a dark" en modo claro */
+div[data-baseweb="modal"] > div, div[aria-modal="true"],
+div[data-baseweb="modal"] section {
+  background: var(--surface-solid) !important; color: var(--text) !important;}
+.katex, .katex .mord, .katex .mrel {color: var(--text) !important;}
 
 /* ---- modal de login: input y botón integrados en ambos temas ---- */
 div[data-testid="stDialog"] .stTextInput input {
@@ -408,6 +410,19 @@ div[data-testid="stExpander"] {
 div[data-testid="stExpander"]:hover {border-color: color-mix(in srgb, var(--accent) 30%, var(--border));}
 div[data-testid="stExpander"] summary {color: var(--text); font-weight: 600; padding: 8px 0;}
 div[data-testid="stExpander"] div[data-testid="stExpanderDetails"] {padding: 4px 0 8px 0;}
+/* los editores de filas (goles/tarjetas/lesiones) viven en columnas
+   angostas dentro del expander: sin min-width los inputs se desbordan
+   del contenedor glass */
+div[data-testid="stExpanderDetails"] {overflow: hidden;}
+div[data-testid="stExpanderDetails"] div[data-testid="stColumn"],
+div[data-testid="stExpanderDetails"] div[data-testid="column"] {min-width: 0;}
+div[data-testid="stExpanderDetails"] .stNumberInput input,
+div[data-testid="stExpanderDetails"] .stTextInput input {min-width: 0;
+  padding-left: 8px; padding-right: 4px;}
+div[data-testid="stExpanderDetails"] div[data-baseweb="select"] > div
+  {min-width: 0;}
+div[data-testid="stExpanderDetails"] div[data-testid="stButton"]
+  {margin-top: 0;}
 div[data-testid="stSlider"] p {color: var(--muted); font-weight: 500; font-size: .82rem;}
 div[data-testid="stSlider"] div[data-baseweb="slider"] {height: 6px !important;}
 div[data-testid="stSlider"] div[data-baseweb="slider"] > div {
@@ -511,6 +526,48 @@ div[data-testid="stError"] {background: var(--surface) !important;}
 /* ---- checkboxes / toggles ---- */
 div[data-testid="stCheckbox"] label span {font-weight: 600;}
 .stToggle {gap: 8px;}
+
+/* ---- íconos Material de Streamlit: NO heredan Poppins. Sin esto el
+   navegador muestra el nombre del glifo como texto plano
+   ("keyboard_arrow_down", "arrow_right") en expanders y selects ---- */
+span[data-testid="stIconMaterial"] {
+  font-family: 'Material Symbols Rounded' !important;
+  font-weight: normal !important; line-height: 1 !important;}
+
+/* ---- paneles nativos con borde (tab admin): recuadro REAL que envuelve
+   los widgets — responsive, sin divs huérfanos ---- */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 22px !important;
+  box-shadow: 0 10px 38px var(--shadow);
+  transition: border-color .25s ease;}
+div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border)) !important;}
+.fc-title {font-size: .85rem; font-weight: 700; color: var(--text);
+  margin: 0 0 4px 0; letter-spacing: -.01em;}
+
+/* ---- tab Auditoría: filas de backtesting ---- */
+.audit-row {display: flex; align-items: center; gap: 16px;
+  padding: 14px 18px; margin-bottom: 10px;}
+.audit-row .ar-date {font-size: .66rem; font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+  min-width: 92px;}
+.audit-row .ar-rival {flex: 1; font-weight: 700; color: var(--text);
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+.audit-row .ar-rival img {width: 26px; height: 17px; object-fit: cover;
+  border-radius: 3px; flex: none;}
+.audit-row .ar-cond {font-size: .6rem; font-weight: 700; color: var(--muted);
+  letter-spacing: .1em;}
+.audit-row .ar-prob {font-weight: 800; font-size: 1.05rem;
+  color: var(--accent); min-width: 110px; text-align: right;}
+.audit-row .ar-prob small {display: block; font-size: .58rem;
+  font-weight: 600; letter-spacing: .08em; color: var(--muted);
+  text-transform: uppercase;}
+.audit-row .ar-score {font-weight: 800; font-size: 1.05rem;
+  color: var(--text); min-width: 64px; text-align: center;}
+.audit-row .ar-hit {font-size: 1.3rem; min-width: 36px; text-align: center;}
 </style>
 """
 
@@ -637,23 +694,22 @@ def build_bracket_payload(live_tok: str, n_sims: int) -> dict:
 
     det_win: dict[str, str] = {}          # "W74" -> equipo que avanza
 
-    def _occupant(ref: str, modal: list) -> tuple[str | None, float | None]:
+    def _occupant(ref: str, modal: list) -> str | None:
         """Lado de la llave: ganador determinista de la llave previa, o el
         ocupante modal del Monte Carlo (entrantes desde grupos)."""
-        team = det_win.get(str(ref)) or (modal[0][0] if modal else None)
-        if team is None:
-            return None, None
-        share = dict(modal).get(team)
-        return team, (round(100 * share, 1) if share is not None else None)
+        return det_win.get(str(ref)) or (modal[0][0] if modal else None)
 
     per_round: dict[str, list] = {k: [] for k in round_lbl}
     champion = None
     for i, m in enumerate(ko):    # orden por num: cada ronda llega resuelta
         mk = str(m.get("num", f"x{i}"))
         ss = slots.get(mk, {"t1": [], "t2": [], "w": []})
-        t1, s1 = _occupant(m["team1"], ss["t1"])
-        t2, s2 = _occupant(m["team2"], ss["t2"])
-        win, pwin = None, None
+        t1 = _occupant(m["team1"], ss["t1"])
+        t2 = _occupant(m["team2"], ss["t2"])
+        # U4-display: pct = P(avanzar en ESTE cruce) — mostrar la ocupación
+        # marginal junto al ganador del head-to-head confunde (un equipo
+        # puede ocupar menos el slot y aun así ser favorito del cruce)
+        win, pwin, s1, s2 = None, None, None, None
         if t1 and t2:
             win = ko_real.get(frozenset((t1, t2)))
             if win:
@@ -669,6 +725,7 @@ def build_bracket_payload(live_tok: str, n_sims: int) -> dict:
                                            t1 != host)["p_home_advances"]
                 win = t1 if p1 >= 0.5 else t2
                 pwin = round(100 * max(p1, 1 - p1))
+                s1, s2 = round(100 * p1), round(100 * (1 - p1))
         num = m.get("num")
         if num is not None and win:
             det_win[f"W{num}"] = win
@@ -684,6 +741,7 @@ def build_bracket_payload(live_tok: str, n_sims: int) -> dict:
             "date": pd.Timestamp(m["date"]).strftime("%d %b").upper(),
             "ground": m.get("ground", "")})
         if m["round"] == "Final" and win:
+            # para el campeón sí es útil la marginal: P(campeón) del sim
             fshare = dict(ss["w"]).get(win)
             champion = {"team": win, "flag": _flag_url(win),
                         "pct": round(100 * fshare, 1) if fshare else None}
@@ -695,6 +753,47 @@ def build_bracket_payload(live_tok: str, n_sims: int) -> dict:
                         "matches": per_round[rnd]}
                        for rnd, lbl in round_lbl.items()],
             "champion": champion}
+
+
+@st.cache_data
+def backtest_last(team: str, n: int = 5) -> pd.DataFrame:
+    """Backtesting honesto (spec §9): reconstruye la predicción PRE-partido
+    con las features de la capa Gold (anti-leakage verificado en el
+    pipeline) y los artefactos entrenados — el MISMO ensemble de
+    producción. Nunca usa el Elo actual del engine (sería leakage)."""
+    from mundial.models.baseline import FEATURES
+    from mundial.models.poisson import (
+        POISSON_FEATURES, outcome_probs, score_matrix,
+    )
+    art = load_artifacts()
+    f = pd.read_parquet(ROOT / "data" / "processed" / "features.parquet")
+    f = (f[((f.home_team == team) | (f.away_team == team))
+           & f.home_score.notna()]
+         .dropna(subset=FEATURES)
+         .sort_values("date").tail(n))
+    if f.empty:
+        return pd.DataFrame()
+    p_clf = art["clf"].predict_proba(f[FEATURES])        # columnas A, D, H
+    lh = art["pois_home"].predict(f[POISSON_FEATURES])
+    la = art["pois_away"].predict(f[POISSON_FEATURES])
+    rows = []
+    for k, (_, r) in enumerate(f.iterrows()):
+        pp = outcome_probs(score_matrix(float(lh[k]), float(la[k]),
+                                        art["rho"]))
+        p = (art["blend"] * p_clf[k]
+             + (1 - art["blend"]) * np.array([pp["A"], pp["D"], pp["H"]]))
+        pa, pd_, ph = float(p[0]), float(p[1]), float(p[2])
+        pred = max((("H", ph), ("D", pd_), ("A", pa)), key=lambda x: x[1])[0]
+        real = ("H" if r.home_score > r.away_score
+                else "A" if r.away_score > r.home_score else "D")
+        es_local = r.home_team == team
+        rows.append({"date": pd.Timestamp(r.date),
+                     "rival": r.away_team if es_local else r.home_team,
+                     "es_local": es_local,
+                     "p_win": ph if es_local else pa, "p_draw": pd_,
+                     "score": f"{int(r.home_score)} – {int(r.away_score)}",
+                     "pred": pred, "real": real, "ok": pred == real})
+    return pd.DataFrame(rows).sort_values("date", ascending=False)
 
 
 @st.cache_data
@@ -844,20 +943,27 @@ def detail_block(prefix: str, home: str, away: str) -> dict:
     k = f"{prefix}{nonce}"
     with st.expander("Contexto del partido — xG, goleadores, tarjetas, "
                      "lesiones, clima, formación (opcional)"):
+        # transparencia (spec §4): qué usa de verdad el modelo vs qué se
+        # guarda solo como historial
+        st.caption("xG → momentum y corrección de ritmo de goles · "
+                   "tarjetas → suspensiones FIFA · lesiones → ajuste Elo. "
+                   "Clima y formación se guardan **solo como metadatos** "
+                   "(no afectan la predicción).")
         c1, c2, c3 = st.columns([1, 1, 2])
         if c1.checkbox("Registrar xG", key=f"{k}_usexg"):
             out["xg_home"] = c1.number_input(f"xG {home}", 0.0, 15.0, 1.0,
                                              0.1, key=f"{k}_xgh")
             out["xg_away"] = c2.number_input(f"xG {away}", 0.0, 15.0, 1.0,
                                              0.1, key=f"{k}_xga")
-        w = c3.selectbox("Clima", WEATHER_OPTS, key=f"{k}_wx")
+        w = c3.selectbox("Clima · solo metadatos", WEATHER_OPTS,
+                         key=f"{k}_wx")
         if w != "Sin dato":
             out["weather"] = w
         c1, c2 = st.columns(2)
-        fh = c1.text_input(f"Formación {home}", placeholder="4-3-3",
-                           key=f"{k}_fh")
-        fa = c2.text_input(f"Formación {away}", placeholder="4-4-2",
-                           key=f"{k}_fa")
+        fh = c1.text_input(f"Formación {home} · solo metadatos",
+                           placeholder="4-3-3", key=f"{k}_fh")
+        fa = c2.text_input(f"Formación {away} · solo metadatos",
+                           placeholder="4-4-2", key=f"{k}_fa")
         out["formation_home"] = fh or pd.NA
         out["formation_away"] = fa or pd.NA
 
@@ -948,8 +1054,8 @@ def xai_dialog(home: str, away: str, date, p: dict, adj_h: float, adj_a: float,
                 unsafe_allow_html=True)
 
             if expl["items"]:
-                st.markdown(f'<div class="mc-meta" style="margin-top:8px">'
-                            f'Detalle</div>', unsafe_allow_html=True)
+                st.markdown('<div class="mc-meta" style="margin-top:8px">'
+                            'Detalle</div>', unsafe_allow_html=True)
                 for lbl, pts in expl["items"]:
                     st.markdown(
                         f'<div class="xai-stat"><span class="label">{esc(lbl)}</span>'
@@ -957,7 +1063,7 @@ def xai_dialog(home: str, away: str, date, p: dict, adj_h: float, adj_a: float,
                         unsafe_allow_html=True)
 
     st.markdown('<div class="xai-divider"></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="mc-meta">Correcciones globales del torneo</div>',
+    st.markdown('<div class="mc-meta">Correcciones globales del torneo</div>',
                 unsafe_allow_html=True)
     if ls.get("n", 0):
         st.markdown(
@@ -982,7 +1088,7 @@ def xai_dialog(home: str, away: str, date, p: dict, adj_h: float, adj_a: float,
                     f'<span class="value">{p["lambda_away"]:.2f}</span></div>',
                     unsafe_allow_html=True)
     with col2:
-        st.markdown(f'<div class="mc-meta">Marcadores más probables</div>',
+        st.markdown('<div class="mc-meta">Marcadores más probables</div>',
                     unsafe_allow_html=True)
         for s, pr in p["scorelines"]:
             st.markdown(f'<span class="pill">{s.replace("-", " – ")} · '
@@ -990,7 +1096,8 @@ def xai_dialog(home: str, away: str, date, p: dict, adj_h: float, adj_a: float,
 
     # ---- sección pedagógica: qué significa todo esto (para no expertos)
     with st.expander("📚 ¿Qué es el rating Elo y cómo afecta esta predicción?"):
-        st.markdown('<div class="elo-tooltip-box">', unsafe_allow_html=True)
+        # sin div wrapper: un <div> abierto en un markdown y cerrado en otro
+        # NO envuelve nada (Streamlit lo autocierra) y dejaba una caja vacía
         st.markdown(
             "**Elo** es un sistema de puntaje (nacido en el ajedrez) donde "
             "cada selección tiene un número que sube al ganar y baja al "
@@ -1019,7 +1126,6 @@ def xai_dialog(home: str, away: str, date, p: dict, adj_h: float, adj_a: float,
                     "probabilidades y los goles esperados (λ) hacia el "
                     "favorito; las correcciones online del torneo ajustan "
                     "el ritmo de goles y los empates al final.")
-        st.markdown('</div>', unsafe_allow_html=True)
 
     if st.button("Cerrar", type="primary"):
         st.rerun()
@@ -1056,7 +1162,7 @@ pending = fixtures[~fixtures.apply(
 # ---- RBAC (spec §8): viewers no construyen el tab de ingesta
 IS_ADMIN = auth.is_admin()
 _labels = ["Próximos partidos", "Líderes", "Cuadro", "Eliminatorias",
-           "Camino al título", "Tablas"]
+           "Camino al título", "Tablas", "Auditoría"]
 if IS_ADMIN:
     _labels.insert(1, "Ingresar resultado")
 _tabs = dict(zip(_labels, st.tabs(_labels)))
@@ -1066,6 +1172,7 @@ tab_bracket = _tabs["Cuadro"]
 tab_ko = _tabs["Eliminatorias"]
 tab_champ = _tabs["Camino al título"]
 tab_tablas = _tabs["Tablas"]
+tab_audit = _tabs["Auditoría"]
 tab_result = _tabs.get("Ingresar resultado")
 
 # ------------------------------------------------ TAB 1: predicciones
@@ -1136,12 +1243,14 @@ if IS_ADMIN:  # RBAC: el tab solo existe para admin (spec R1)
 
         col_a, col_b = st.columns([1, 1], gap="large")
 
-        with col_a:
-            st.markdown('<div class="form-card"><h4>🏆 Fase de grupos</h4>',
+        # paneles con st.container(border=True): el recuadro envuelve de
+        # verdad a los widgets (los <div> abiertos/cerrados en markdowns
+        # separados no contienen nada — Streamlit los cierra solos)
+        with col_a, st.container(border=True):
+            st.markdown('<h4 class="fc-title">🏆 Fase de grupos</h4>',
                         unsafe_allow_html=True)
             if pending.empty:
                 st.info("No hay fixtures pendientes de fase de grupos.")
-                st.markdown('</div>', unsafe_allow_html=True)
             else:
                 opts = {f"{r.date.date()} · Grupo {r.group} · {r.home_team} vs "
                         f"{r.away_team}": i for i, r in pending.iterrows()}
@@ -1170,10 +1279,9 @@ if IS_ADMIN:  # RBAC: el tab solo existe para admin (spec R1)
                     st.success(f"{row.home_team} {gh} – {ga} {row.away_team} "
                                "guardado. Predicciones recalculadas.")
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
 
-        with col_b:
-            st.markdown('<div class="form-card"><h4>⚔️ Eliminatoria / manual</h4>',
+        with col_b, st.container(border=True):
+            st.markdown('<h4 class="fc-title">⚔️ Eliminatoria / manual</h4>',
                         unsafe_allow_html=True)
             teams48 = sorted(load_teams().name_canonical)
             c1, c2 = st.columns(2)
@@ -1203,12 +1311,11 @@ if IS_ADMIN:  # RBAC: el tab solo existe para admin (spec R1)
                                prefix="m")
                     st.success("Partido guardado. Predicciones recalculadas.")
                     st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
 
         if len(live):
-            st.markdown(f'<div class="form-card" style="margin-top:12px">'
-                        f'<h4>📜 Resultados ingresados ({len(live)})</h4>',
-                        unsafe_allow_html=True)
+            hist = st.container(border=True)
+            hist.markdown(f'<h4 class="fc-title">📜 Resultados ingresados '
+                          f'({len(live)})</h4>', unsafe_allow_html=True)
             show = live[["date", "home_team", "home_score", "away_score",
                          "away_team", "xg_home", "xg_away", "weather",
                          "stage"]].copy()
@@ -1220,14 +1327,13 @@ if IS_ADMIN:  # RBAC: el tab solo existe para admin (spec R1)
                 "away_score": "GV", "away_team": "Visitante",
                 "xg_home": "xG (L)", "xg_away": "xG (V)",
                 "weather": "Clima", "stage": "Fase"})
-            st.markdown(tbl(show.fillna("—").sort_values("Fecha",
-                                                         ascending=False),
-                            flags={"Local", "Visitante"}, height=280),
-                        unsafe_allow_html=True)
-            if st.button("🗑️ Borrar el último resultado"):
+            hist.markdown(tbl(show.fillna("—").sort_values("Fecha",
+                                                           ascending=False),
+                              flags={"Local", "Visitante"}, height=280),
+                          unsafe_allow_html=True)
+            if hist.button("🗑️ Borrar el último resultado"):
                 STORE.delete_match(str(live.iloc[-1].match_id))
                 st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
 
 # ------------------------------------------------ TAB 3: líderes
 with tab_leaders:
@@ -1318,10 +1424,12 @@ with tab_bracket:
     c1.subheader("Cuadro del Mundial")
     n_sims_b = c2.selectbox("Simulaciones", [2000, 5000, 10000], index=1,
                             key="nsims_bracket")
-    st.caption("Filtra por fase con los botones. Las llaves se conectan con "
-               "su cruce de origen; en rojo, el equipo que avanza en cada "
-               "cruce (P(avanza) > 50%, determinista). Los cruces ya "
-               "ingresados quedan al 100%.")
+    st.caption("Camino más probable (determinista): en cada llave avanza el "
+               "equipo con P(avanza) > 50% en ESE cruce — los porcentajes de "
+               "cada lado son justamente esa probabilidad del cruce, no la "
+               "frecuencia Monte Carlo. En rojo, el que avanza; los cruces "
+               "ya ingresados quedan al 100%. En el modo foco verás también "
+               "los candidatos alternativos a ocupar cada llave.")
     with st.spinner("Simulando el torneo..."):
         payload = build_bracket_payload(STORE.token(), n_sims_b)
     render_bracket(payload, height=790)
@@ -1331,6 +1439,11 @@ with tab_ko:
     st.subheader("Predictor de cruces")
     st.caption("Cuando se definan los cruces, elige las dos selecciones. "
                "P(avanza) incluye prórroga/penales aproximados por Elo.")
+    st.caption("⚙️ **Modelo:** ensemble Regresión Logística (peso 0.8) + "
+               "Poisson Dixon-Coles (0.2, ρ=−0.15) sobre features "
+               "Elo/forma/H2H pre-partido, con ajustes en vivo (momentum, "
+               "suspensiones, lesiones) y corrección bayesiana del torneo "
+               "(ritmo de goles, empates, altitud).")
     teams48 = sorted(load_teams().name_canonical)
     c1, c2, c3 = st.columns([2, 2, 1])
     k1 = c1.selectbox("Equipo 1", teams48, key="k1")
@@ -1438,8 +1551,11 @@ with tab_tablas:
                                          (r.away_team, r.away_score, r.home_score)):
                         s = stats.setdefault(team, [0, 0, 0, 0, 0, 0, 0])
                         s[0] += 1                      # PJ
-                        s[1] += gf > ga; s[2] += gf == ga; s[3] += gf < ga
-                        s[4] += gf; s[5] += ga
+                        s[1] += gf > ga
+                        s[2] += gf == ga
+                        s[3] += gf < ga
+                        s[4] += gf
+                        s[5] += ga
                         s[6] += 3 * (gf > ga) + (gf == ga)
                 t = (pd.DataFrame.from_dict(
                         stats, orient="index",
@@ -1460,3 +1576,48 @@ with tab_tablas:
                                                        "elo": "Elo"})
         st.markdown(tbl(rk, flags={"Selección"}, height=600),
                     unsafe_allow_html=True)
+
+# ------------------------------------------------ TAB 8: auditoría de modelos
+with tab_audit:
+    st.subheader("Auditoría de modelos — backtesting")
+    st.caption("Predicción PRE-partido reconstruida desde la capa Gold "
+               "(features con anti-leakage) con los artefactos entrenados — "
+               "el mismo ensemble de producción: Regresión Logística (0.8) "
+               "+ Poisson Dixon-Coles (0.2, ρ=−0.15). ✓ = el resultado real "
+               "coincidió con el 1X2 más probable del modelo.")
+    teams_all = sorted(load_teams().name_canonical)
+    eq = st.selectbox("Selección a auditar", teams_all,
+                      index=teams_all.index("Argentina")
+                      if "Argentina" in teams_all else 0)
+    bt = backtest_last(eq)
+    if bt.empty:
+        st.info("No hay partidos jugados con features completas para esta "
+                "selección.")
+    else:
+        hits = int(bt.ok.sum())
+        st.markdown(f'<div class="mc-meta" style="margin:6px 0 12px 0">'
+                    f'ÚLTIMOS {len(bt)} PARTIDOS · MODELO ACERTÓ EL 1X2 EN '
+                    f'{hits}/{len(bt)}</div>', unsafe_allow_html=True)
+        lbl = {"H": "GANA LOCAL", "D": "EMPATE", "A": "GANA VISITA"}
+        for r in bt.itertuples(index=False):
+            cond = "LOCAL" if r.es_local else "VISITA"
+            st.markdown(
+                f'<div class="glass audit-row">'
+                f'<span class="ar-date">{r.date.strftime("%d %b %Y")}'
+                f'</span>'
+                f'<span class="ar-rival">{flag_img(r.rival, 26)} '
+                f'vs {esc(r.rival)} '
+                f'<span class="ar-cond">({cond})</span></span>'
+                f'<span class="ar-prob">{100 * r.p_win:.0f}%'
+                f'<small>victoria {esc(eq)} (pre-partido)</small></span>'
+                f'<span class="ar-score">{r.score}</span>'
+                f'<span class="ar-prob" style="min-width:150px">'
+                f'{"✓" if r.ok else "✗"} {lbl[r.pred]}'
+                f'<small>pronóstico vs real: {lbl[r.real].lower()}</small>'
+                f'</span>'
+                f'<span class="ar-hit">{"✅" if r.ok else "❌"}</span>'
+                f'</div>', unsafe_allow_html=True)
+        st.caption("Recordatorio honesto: el techo del estado del arte en "
+                   "1X2 internacional es ~55-60% de acierto; el valor real "
+                   "del modelo está en su calibración (cuando dice 80%, "
+                   "acierta ~80% de esas veces).")

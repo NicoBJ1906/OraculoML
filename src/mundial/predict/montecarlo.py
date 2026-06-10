@@ -140,7 +140,6 @@ class TournamentSimulator:
     def _precompute_ko_pairs(self, date: str = "2026-07-04") -> None:
         """P(local avanza) para TODOS los pares posibles de eliminatoria,
         en batch (una sola pasada de sklearn — clave para la velocidad)."""
-        from mundial.features.elo import BASE
         from mundial.models.baseline import FEATURES
         from mundial.models.poisson import (
             POISSON_FEATURES, outcome_probs, score_matrix,

@@ -1,7 +1,6 @@
 """Tests del desempate FIFA de fase de grupos (spec sección 4):
 Pts → DG → GF → head-to-head entre empatados → azar."""
 import numpy as np
-import pytest
 
 from mundial.predict.montecarlo import rank_group
 

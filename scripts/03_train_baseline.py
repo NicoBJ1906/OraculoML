@@ -45,7 +45,7 @@ def main() -> None:
     maj = ytr.mode()[0]
     freq = ytr.value_counts(normalize=True)
     sorted_labels = sorted(LABELS)  # ['A','D','H'] como espera sklearn
-    proba_triv = np.tile([freq.get(l, 0.0) for l in sorted_labels], (len(yte), 1))
+    proba_triv = np.tile([freq.get(lab, 0.0) for lab in sorted_labels], (len(yte), 1))
     report("baseline (siempre local)", yte, [maj] * len(yte), proba_triv, sorted_labels)
 
     # 2) Elo puro (logistic con una sola feature)

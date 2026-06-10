@@ -1,0 +1,34 @@
+# CI de calidad y seguridad: lint (ruff), seguridad de código (bandit),
+# CVEs de dependencias (pip-audit) y tests (pytest).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt ruff bandit pip-audit pytest
+
+      - name: Lint (ruff)
+        run: ruff check app.py src/ scripts/ tests/
+
+      - name: Seguridad de código (bandit)
+        run: bandit -r app.py src/ -q
+
+      - name: Vulnerabilidades de dependencias (pip-audit)
+        run: pip-audit --skip-editable
+
+      - name: Tests (pytest)
+        run: pytest

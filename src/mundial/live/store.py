@@ -14,9 +14,24 @@ los datos originales (mismo patrón que tendría una capa Silver en S3).
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pandas as pd
+
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+_FORMULA_PREFIX = "=+-@\t "
+
+
+def sanitize_text(value, maxlen: int = 120) -> str:
+    """Sanitiza texto libre antes de persistir (invariante S3 del spec):
+    sin caracteres de control, sin prefijos de fórmula (anti
+    CSV-injection al abrir los CSV en Excel/Sheets) y longitud acotada.
+    El escape HTML del display es una capa aparte (esc() en la UI)."""
+    s = _CONTROL_RE.sub("", str(value)).strip()
+    s = s.lstrip(_FORMULA_PREFIX)
+    return s[:maxlen].strip()
+
 
 RESULT_COLS = [
     "match_id", "date", "home_team", "away_team", "home_score", "away_score",
@@ -30,7 +45,8 @@ INJURY_COLS = ["match_id", "date", "team", "player", "severity"]
 
 def make_match_id(date, home: str, away: str) -> str:
     d = pd.Timestamp(date).strftime("%Y%m%d")
-    slug = lambda s: s.lower().replace(" ", "-")
+    def slug(s: str) -> str:
+        return s.lower().replace(" ", "-")
     return f"{d}_{slug(home)}_{slug(away)}"
 
 
@@ -82,19 +98,29 @@ class LiveStore:
     def add_match(self, result: dict, players: list[dict] | None = None,
                   cards: list[dict] | None = None,
                   injuries: list[dict] | None = None) -> str:
-        """Guarda un partido completo. Devuelve el match_id."""
+        """Guarda un partido completo. Devuelve el match_id.
+        Todo texto libre (jugadores, formaciones) se sanitiza aquí —
+        boundary único de escritura (invariante S3)."""
         mid = make_match_id(result["date"], result["home_team"],
                             result["away_team"])
         result = {**{c: pd.NA for c in RESULT_COLS}, **result,
                   "match_id": mid}
+        for k in ("formation_home", "formation_away", "weather"):
+            if pd.notna(result.get(k)):
+                result[k] = sanitize_text(result[k], 40)
+
+        def _clean(rows: list[dict] | None) -> list[dict]:
+            return [{**r, "player": sanitize_text(r["player"])}
+                    if "player" in r else r for r in (rows or [])]
+
         self._append(self.f_results, RESULT_COLS, [result])
         stamp = {"match_id": mid, "date": result["date"]}
         self._append(self.f_players, PLAYER_COLS,
-                     [{**stamp, **p} for p in (players or [])])
+                     [{**stamp, **p} for p in _clean(players)])
         self._append(self.f_cards, CARD_COLS,
-                     [{**stamp, **c} for c in (cards or [])])
+                     [{**stamp, **c} for c in _clean(cards)])
         self._append(self.f_injuries, INJURY_COLS,
-                     [{**stamp, **i} for i in (injuries or [])])
+                     [{**stamp, **i} for i in _clean(injuries)])
         return mid
 
     def delete_match(self, match_id: str) -> None:

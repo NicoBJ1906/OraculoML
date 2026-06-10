@@ -35,7 +35,6 @@ def main() -> None:
 
     # ----------------- chequeos anti-leakage -----------------
     print("\n== ANTI-LEAKAGE / SANITY ==")
-    first = feats.sort_values("date").groupby("home_team").head(1)
     # el primer partido como local de un equipo no debería tener forma previa
     print("Elo del primerísimo partido (debe ser 1500):",
           round(float(feats.sort_values("date").iloc[0].elo_home_pre), 1))

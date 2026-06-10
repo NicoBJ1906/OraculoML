@@ -53,7 +53,9 @@ def _h2h(matches: pd.DataFrame) -> pd.DataFrame:
     hs = matches["home_score"].to_numpy()
     as_ = matches["away_score"].to_numpy()
     n = len(matches)
-    hw = np.zeros(n); dd = np.zeros(n); aw = np.zeros(n)
+    hw = np.zeros(n)
+    dd = np.zeros(n)
+    aw = np.zeros(n)
     counts: dict[tuple, list] = defaultdict(lambda: [0, 0, 0])  # (x,y) x<y -> [x_wins, draws, y_wins]
 
     for i in range(n):

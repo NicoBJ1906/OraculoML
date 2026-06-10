@@ -53,16 +53,12 @@ def is_admin() -> bool:
 
 @st.dialog("🔒 Acceso administrativo")
 def _login_dialog() -> None:
+    """Invariante R2 (no-leak): este flujo nunca muestra detalles de
+    configuración (rutas de secrets, plantillas TOML) ni distingue entre
+    clave incorrecta y auth sin configurar. Instrucciones de despliegue:
+    ver CLAUDE.md, sección Despliegue."""
     if is_admin():
         st.markdown("Sesión activa como **Super User**.")
-        # TODO(nico): quitar este recordatorio antes de abrir la app al
-        # público — solo lo ve el admin logueado.
-        st.info(
-            "**Despliegue en Streamlit Community Cloud:** la clave NO viaja "
-            "con el repo (secrets.toml está gitignored). Configúrala en "
-            "share.streamlit.io → tu app → **Settings → Secrets** y pega:\n"
-            "```toml\nadmin_password = \"TU_CLAVE_FUERTE\"\n```\n"
-            "En local vive en `.streamlit/secrets.toml`.")
         if st.button("Cerrar sesión", use_container_width=True):
             st.session_state["role"] = VIEWER
             st.rerun()
@@ -78,9 +74,10 @@ def _login_dialog() -> None:
                 st.session_state["role"] = ADMIN
                 st.rerun()
             else:
+                # el motivo exacto va SOLO al log, nunca a pantalla
                 _LOG.warning("login admin fallido (clave incorrecta o "
                              "auth sin configurar)")
-                st.error("Clave incorrecta o auth no configurada.")
+                st.error("Acceso denegado.")
 
 
 def login_entry() -> None:
