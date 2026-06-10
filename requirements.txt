@@ -1,0 +1,28 @@
+# --- Núcleo: ingesta y datos (Tier-0) ---
+requests>=2.31
+pandas>=2.2
+pyarrow>=16.0
+pyyaml>=6.0
+
+# --- Modelado (Sprints 1-2) ---
+scikit-learn>=1.5
+statsmodels>=0.14        # regresión de Poisson (Dixon-Coles)
+scipy>=1.13
+xgboost>=2.1
+
+# --- Experimentos y visualización ---
+mlflow>=2.14
+matplotlib>=3.9
+seaborn>=0.13
+tqdm>=4.66
+
+# --- UI de predicciones en vivo (Sprint 5) ---
+streamlit>=1.40
+joblib>=1.4
+
+# --- Testing ---
+pytest>=8.0
+
+# --- Fuentes avanzadas (Sprints 3-4; descomenta cuando llegues) ---
+# statsbombpy>=1.11      # event data Mundiales 2018/2022 (xG, presión, pases)
+# soccerdata>=1.8        # FBref / Understat (xG agregado)

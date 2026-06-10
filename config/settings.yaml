@@ -1,0 +1,34 @@
+project:
+  name: mundial-2026-ml
+  worldcup_year: 2026
+  # Rango de partidos que el modelo ENTRENA y EVALÚA:
+  model_start_year: 2010
+  # Nota: se descarga el histórico completo (1872+) y se usa para CALCULAR
+  # features (H2H "últimos 5 años", forma, Elo) sin huecos en los primeros años.
+  # El filtro >= 2010 se aplica recién en la zona silver/gold.
+
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed
+
+# Validación TEMPORAL (clave para evitar data leakage):
+split:
+  train_max_year: 2021          # entrena con partidos <= 2021
+  test_tournament: FIFA World Cup
+  test_year: 2022               # valida hold-out contra el Mundial 2022
+
+sources:
+  international_results:         # martj42 — GitHub, dominio público, sin API key
+    base: https://raw.githubusercontent.com/martj42/international_results/master
+    files:
+      - results.csv
+      - goalscorers.csv
+      - shootouts.csv
+      - former_names.csv
+  worldcup_2026:                # openfootball — GitHub, dominio público, sin API key
+    base: https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026
+    files:
+      - worldcup.json
+      - worldcup.teams.json
+      - worldcup.stadiums.json

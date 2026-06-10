@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.ipynb_checkpoints/
+
+# Datos (no se versionan; se regeneran con los scripts de ingesta)
+data/raw/*
+data/interim/*
+data/processed/*
+# Datos dinámicos del torneo (estado personal, se crean desde la UI)
+data/live/*
+!data/**/.gitkeep
+
+# Modelos / experimentos
+mlruns/
+*.joblib
+*.pkl
+
+# Secretos
+.env
+config/secrets.yaml
+
+# Testing / herramientas
+.pytest_cache/
+.playwright-mcp/
+
+# OS / IDE
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/

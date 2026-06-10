@@ -1,0 +1,10 @@
+[project]
+name = "mundial-2026-ml"
+version = "1.0.0"
+description = "Predictor del Mundial 2026: ensemble Logistic + Poisson Dixon-Coles con ingesta en vivo, Feature State Updating y Online Learning"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
