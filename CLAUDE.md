@@ -136,19 +136,77 @@ _adjust_probs) — el engine base sigue siendo bit-a-bit el de entrenamiento.
   getComputedStyle solo (devuelve valores viejos en el rerun).
 - Bracket viejo con margin-math eliminado (era el daño principal).
 - RBAC (`mundial/auth.py`): viewer default, admin con clave de
-  `.streamlit/secrets.toml` (gitignored; clave actual local:
-  mundial2026-nico). El tab Ingresar no se construye para viewers.
+  `.streamlit/secrets.toml` (gitignored — la clave NUNCA va en archivos
+  versionados; verla en el propio secrets.toml local). El tab Ingresar
+  no se construye para viewers.
 - Rosters Gold: `scripts/06_build_rosters.py` → rosters_2026.parquet
   (825 jugadores desde goalscorers 2022+). Dropdowns anti-typos con "Otro…".
 - XAI dialog: sección pedagógica de Elo con st.latex.
 - 23 tests verdes. Push: usar el extraHeader Basic documentado arriba.
 
+## Sesión 2026-06-10 (tarde) — hotfix UI + determinismo del Cuadro
+
+- **Login sin sidebar**: `auth.login_entry()` (botón en header → `st.dialog`).
+  Causa raíz: el CSS oculta `header[data-testid="stHeader"]` y se llevaba el
+  control de re-expandir el sidebar. El sidebar ya no se usa; el CSS deja
+  visible `stSidebarCollapsedControl` por si algo vuelve a renderizar ahí.
+- **Cuadro determinista (invariante U4 del spec)**: `build_bracket_payload`
+  (cacheada, app.py) — entrantes a R32 = ocupante modal del Monte Carlo; de
+  ahí en adelante avanza el de `p_advances > 50%` vía `engine.predict_match`
+  (o el ganador real ingresado). Las marginales de `slot_stats` NO componen
+  entre rondas; solo se usan para los pct. Payload ganó `num/src1/src2/pwin`.
+- **Conectores del bracket**: SVG overlay en bracket.html, mapeado por
+  `src1/src2` (num de llave), NUNCA por posición (el orden visual no
+  coincide con los cruces, ej. llave 89 = W74 vs W77).
+- **Recuadro negro del bracket en modo claro**: causa = `color-scheme` del
+  iframe distinto al del embedder → el browser fuerza canvas opaco.
+  Fix: `applyTheme()` copia el `colorScheme` computado del body padre.
+- **Filtro de Próximos**: jornadas derivadas del calendario real (el n-ésimo
+  partido de cada equipo es su Fecha n), con rango de fechas en el label.
+- **Podio**: clases `.podium-pct`/`.podium-lbl` (la vieja `mc-score` no
+  existía en el CSS — por eso "34%campeón" salía pegado).
+- Smoke test sin Playwright: `python -c "import app"` (bare mode) +
+  validación de consistencia del payload. 23 tests verdes.
+- **Logging**: `logs/app.log` (RotatingFileHandler, logger raíz "mundial").
+  Registra: carga de artifacts, build del engine, Monte Carlo (n y tiempo),
+  bracket determinista, login OK/fallido (nunca la clave), guardar/borrar
+  resultados. logs/ está gitignored.
+- **Validación E2E con Playwright (2026-06-10)**: tabs, login modal → tab
+  Ingresar aparece, jornadas reales (Fecha 1 = 24 partidos 11-17 jun),
+  bracket determinista verificado en UI (Colombia 37% vs Croatia 45% de
+  ocupar la llave → "Avanza Colombia · 65% en este cruce"), modo claro sin
+  recuadro negro, conectores visibles, podio espaciado, guardar+borrar
+  resultado con recálculo. 0 errores de consola.
+- Fix tabla "Resultados ingresados": columnas renombradas a nombres ÚNICOS
+  (GL/GV, xG (L)/(V)) — con nombres duplicados `r[c]` devuelve una Series
+  y la celda imprimía "Name: 0, dtype: object".
+- OJO si la app "pierde" funciones nuevas de módulos de src/ tras editar:
+  reiniciar streamlit — el proceso viejo mantiene los módulos importados
+  en caché (el AttributeError de login_entry fue eso, no un bug).
+
+## Sesión 2026-06-10 (cierre) — data lake al día + secrets para Cloud
+
+- **Pipeline corrido completo** (00→01→02→04→05→06): datos hasta
+  2026-06-09, 49.398 partidos silver (+22), modelo reentrenado con 15.618
+  (acc 0.602 / log-loss 0.867 / WC2022 hold-out 0.547 — estable), rosters
+  regenerados. El Elo base ya incluye los amistosos de la víspera.
+- **Secrets formato Cloud**: `st.secrets["admin_password"]` top-level
+  (mismo formato local y en Community Cloud → Settings → Secrets);
+  `[auth].admin_password` sigue aceptado. La clave local vive SOLO en
+  `.streamlit/secrets.toml`. El modal admin muestra un st.info temporal
+  con las instrucciones de despliegue (TODO: quitarlo al abrir al público).
+- **CSS**: date picker (st.date_input, tab Eliminatorias) y modal de login
+  variabilizados — cero colores quemados, funcionan en dark y light. Se
+  usan las vars propias (`--text/--bg/...`) y NO las nativas de Streamlit
+  (`--text-color`): las nativas vienen de config.toml y no cambian con el
+  toggle runtime de tema.
+- OJO: Streamlit avisa que `st.components.v1.html` se elimina después de
+  2026-06-01 (fecha ya vencida) — migrar a `st.iframe` pronto.
+
 ## Pendiente / ideas
 
 - `tests/` y `evaluate/` siguen vacíos (los chequeos viven en los scripts).
 - Sprints 3-4 del PLAN (API-Football, StatsBomb xG) sin empezar.
-- Cruces de eliminatoria: el bracket ya se autocompleta vía Monte Carlo;
-  falta resolver determinísticamente los cruces R32 cuando los grupos
-  cierren (hoy quedan implícitos en las frecuencias del sim).
+- Migrar `components.html` → `st.iframe` (deprecación vencida, ver arriba).
 - Expectativa del usuario: "predicciones altas" — ya se le explicó que
   55-60% en 1X2 es el techo honesto; el valor real está en la calibración.

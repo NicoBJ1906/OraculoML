@@ -156,7 +156,7 @@ intacto). **Invariante O2**: la capa live JAMÁS llama `model.fit()`.
 | **tbl** | Tabla HTML propia con theming vía `tblwrap`/`tbl` clases. Soporta flags y barras de progreso. | Reemplaza a `st.dataframe` para respetar el tema oscuro/claro. |
 | **leader-card** | Tarjetas animadas con gradiente, hover `translateY(-4px) scale(1.02)` y glow. | Top-10 goleadores, asistencias y tarjetas. |
 | **form-card** | Contenedor glass con padding y hover sutil para los formularios de ingreso. | Separa visualmente las secciones de registro. |
-| **bracket** | Flexbox horizontal con overflow-x auto. 6 columnas (R32 → Campeón). Cada llave muestra equipo favorito + P de avance. | `slot_stats` del Monte Carlo alimenta los ocupantes. |
+| **bracket** | Flexbox horizontal con overflow-x auto. 6 columnas (R32 → Campeón) + conectores SVG entre llaves. Cada llave muestra ocupantes + P de ocupar la llave. | Invariante U4 (determinismo): los entrantes a R32 son los ocupantes modales del Monte Carlo, pero a partir de ahí la propagación es DETERMINISTA — en cada llave avanza el equipo con `P(avanza) > 50%` según `engine.predict_match` (o el ganador real si el cruce ya se ingresó). Las marginales de `slot_stats` NO componen entre rondas y solo se usan para los `pct` mostrados. |
 
 ### Flujo de ingesta de resultados (Tab 2)
 - Dos paneles lado a lado: fase de grupos (selector de fixture pendiente) y
@@ -193,13 +193,21 @@ la app sigue 100% funcional.
 ```json
 {
   "rounds": [{"key": "R32", "label": "Dieciseisavos",
-              "matches": [{"t1": {"team": "...", "flag": "url", "pct": 64},
-                           "t2": {...}, "win": "team|null",
+              "matches": [{"num": 74, "src1": null, "src2": null,
+                           "t1": {"team": "...", "flag": "url", "pct": 64},
+                           "t2": {...}, "win": "team|null", "pwin": 62,
                            "cands1": [["team", 0.64], ...],
                            "date": "28 JUN", "ground": "..."}]}],
   "champion": {"team": "...", "flag": "url", "pct": 25}
 }
 ```
+
+- `num`: id de la llave (`"final"` para la final, sin num en el JSON fuente).
+- `src1`/`src2`: num de la llave previa que alimenta cada lado (null en R32)
+  — el template dibuja los conectores SVG con este mapeo, nunca por posición.
+- `pwin`: P(%) de que `win` avance en ESTE cruce concreto (determinismo U4).
+- `pct` puede ser null (ocupante determinista fuera del top-3 del Monte
+  Carlo); el template omite el porcentaje en ese caso.
 
 ### Contrato de theming (frontend)
 
@@ -217,12 +225,16 @@ la app sigue 100% funcional.
 | Rol | Acceso | Activación |
 |---|---|---|
 | `viewer` (default) | Próximos, Líderes, Cuadro, Eliminatorias, Camino, Tablas, XAI | ninguna |
-| `admin` | todo + **Ingresar resultado** (motor en vivo) | contraseña de `st.secrets["auth"]["admin_password"]` |
+| `admin` | todo + **Ingresar resultado** (motor en vivo) | contraseña de `st.secrets["admin_password"]` (top-level, igual en local y en Streamlit Community Cloud; `[auth].admin_password` aceptado por compatibilidad) |
 
 - La contraseña vive en `.streamlit/secrets.toml` (GITIGNORED); se versiona
   `secrets.toml.example`. Sin secrets configurados, la app queda en viewer.
 - Invariante R1: el rol vive en `st.session_state["role"]`; el tab de
   ingesta NO se construye para viewers (no solo se oculta).
+- UI de login: botón "Acceso admin" en el header → `st.dialog` modal
+  (`auth.login_entry`). NO usa `st.sidebar`: el header nativo de Streamlit
+  está oculto por CSS y se llevaba consigo el control de re-expandir el
+  sidebar (bug conocido).
 
 ### 2.4 Gold: `rosters_2026.parquet` (plantillas normalizadas)
 

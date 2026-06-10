@@ -4,7 +4,9 @@
      Theming: hereda las CSS vars del documento padre; MutationObserver
      re-aplica al togglear el tema. -->
 <style>
-  :root { color-scheme: dark light; }
+  /* OJO: el color-scheme se copia del padre en applyTheme(). Si difiere
+     del embedder, el browser fuerza un canvas opaco en el iframe — ese
+     era el recuadro negro del modo claro. */
   * { box-sizing: border-box; margin: 0;
       font-family: 'Poppins','Inter',-apple-system,sans-serif; }
   body { background: transparent; overflow: hidden; }
@@ -20,7 +22,11 @@
               box-shadow: 0 4px 16px var(--glow); }
 
   /* ---- modo árbol: columnas flex, espaciado por space-around ---- */
-  #tree { display: flex; gap: 12px; height: calc(100vh - 60px); }
+  #tree { display: flex; gap: 12px; height: calc(100vh - 60px);
+          position: relative; }
+  #links { position: absolute; inset: 0; z-index: 0;
+           pointer-events: none; }
+  #links path { fill: none; stroke: var(--border); stroke-width: 1.5; }
   .col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .rlabel { text-align: center; font-size: .64rem; font-weight: 700;
             letter-spacing: .14em; text-transform: uppercase;
@@ -30,6 +36,7 @@
 
   .match { background: var(--surface); border: 1px solid var(--border);
            border-radius: 12px; padding: 6px 9px;
+           position: relative; z-index: 1;
            backdrop-filter: blur(20px) saturate(150%);
            box-shadow: 0 6px 20px var(--shadow);
            transition: border-color .25s, transform .25s; }
@@ -98,6 +105,12 @@
     for (const v of VARS)
       document.documentElement.style.setProperty(
         v, (vars && vars[v]) || cs.getPropertyValue(v));
+    /* sincronizar color-scheme con el embedder: si difieren, el browser
+       fuerza un canvas opaco (negro) en el iframe (bug del modo claro) */
+    try {
+      document.documentElement.style.colorScheme =
+        getComputedStyle(PD.body).colorScheme || 'normal';
+    } catch (e) {}
   }
   applyTheme();
   /* el <style> de :root vive en el BODY (lo inyecta st.markdown) */
@@ -117,19 +130,22 @@
   function sideHtml(t, win) {
     if (!t) return '<div class="side"><span class="nm">—</span></div>';
     const w = win && t.team === win ? ' win' : '';
-    const pc = t.pct >= 99.5 ? '' : `<span class="pc">${Math.round(t.pct)}%</span>`;
+    const pc = (t.pct == null || t.pct >= 99.5) ? ''
+      : `<span class="pc">${Math.round(t.pct)}%</span>`;
     const img = t.flag ? `<img src="${t.flag}" alt="">` : '';
     return `<div class="side${w}">${img}<span class="nm">${esc(t.team)}</span>${pc}</div>`;
   }
 
   function matchHtml(m, focus) {
     let extra = '';
+    if (focus && m.win && m.pwin != null)
+      extra += `<div class="cands">Avanza ${esc(m.win)} · ${m.pwin}% en este cruce</div>`;
     if (focus && m.cands1 && m.cands1.length > 1) {
       const alt = a => a.slice(1).map(([t, p]) =>
         `${esc(t)} ${Math.round(p * 100)}%`).join(' · ');
-      extra = `<div class="cands">Alt: ${alt(m.cands1)} | ${alt(m.cands2)}</div>`;
+      extra += `<div class="cands">Alt: ${alt(m.cands1)} | ${alt(m.cands2)}</div>`;
     }
-    return `<div class="match">${sideHtml(m.t1, m.win)}${sideHtml(m.t2, m.win)}
+    return `<div class="match" data-num="${m.num}">${sideHtml(m.t1, m.win)}${sideHtml(m.t2, m.win)}
       <div class="foot">${esc(m.date)} · ${esc(m.ground)}</div>${extra}</div>`;
   }
 
@@ -140,8 +156,44 @@
      <div class="slots">${r.matches.map(m => matchHtml(m, false)).join('')}
      </div></div>`).join('') +
     (DATA.champion ? `<div class="col"><div class="rlabel">Campeón</div>
-     <div class="slots"><div class="match champ"><div class="tag">🏆 Favorito</div>
+     <div class="slots"><div class="match champ" data-num="champ">
+     <div class="tag">🏆 Favorito</div>
      ${sideHtml(DATA.champion, DATA.champion.team)}</div></div></div>` : '');
+
+  /* ---- conectores SVG: mapeo por num de llave (src1/src2 del payload),
+     nunca por posición — el orden visual no coincide con los cruces ---- */
+  const linksSvg = document.createElementNS(
+    'http://www.w3.org/2000/svg', 'svg');
+  linksSvg.id = 'links';
+  tree.prepend(linksSvg);
+
+  function drawLinks() {
+    if (tree.style.display === 'none') return;
+    const tr = tree.getBoundingClientRect();
+    if (!tr.width) return;
+    linksSvg.setAttribute('width', tr.width);
+    linksSvg.setAttribute('height', tr.height);
+    const el = n => tree.querySelector(`.match[data-num="${n}"]`);
+    let d = '';
+    const link = (srcN, tgtN) => {
+      const src = el(srcN), tgt = el(tgtN);
+      if (!src || !tgt) return;
+      const a = src.getBoundingClientRect(), b = tgt.getBoundingClientRect();
+      const x1 = a.right - tr.left, y1 = a.top + a.height / 2 - tr.top;
+      const x2 = b.left - tr.left, y2 = b.top + b.height / 2 - tr.top;
+      const mx = (x1 + x2) / 2;
+      d += `M${x1} ${y1} H${mx} V${y2} H${x2} `;
+    };
+    for (const r of DATA.rounds)
+      for (const m of r.matches)
+        for (const s of [m.src1, m.src2])
+          if (s != null) link(s, m.num);
+    if (DATA.champion) link('final', 'champ');
+    linksSvg.innerHTML = `<path d="${d}"/>`;
+  }
+  window.addEventListener('resize', drawLinks);
+  window.addEventListener('load', drawLinks);
+  setTimeout(drawLinks, 500);   // re-trazar tras cargar fuentes/banderas
 
   /* ---- filtro de fases ---- */
   const bar = document.getElementById('bar');
@@ -155,6 +207,8 @@
     if (key === 'ALL') {
       focusEl.style.display = 'none';
       tree.style.display = 'flex';
+      drawLinks();              // layout final ya disponible (GSAP solo
+                                // anima transform, no afecta los rects)
       if (window.gsap) gsap.fromTo('#tree .match',
         {opacity: 0, scale: .92, y: 10},
         {opacity: 1, scale: 1, y: 0, duration: .7, stagger: .012,

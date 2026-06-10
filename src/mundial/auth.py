@@ -13,11 +13,13 @@ viewers, no solo se oculta.
 from __future__ import annotations
 
 import hmac
+import logging
 
 import streamlit as st
 
 VIEWER = "viewer"
 ADMIN = "admin"
+_LOG = logging.getLogger("mundial.auth")
 
 
 def verify_password(candidate: str, secret: str | None) -> bool:
@@ -28,10 +30,16 @@ def verify_password(candidate: str, secret: str | None) -> bool:
 
 
 def _secret_password() -> str | None:
-    try:
-        return st.secrets["auth"]["admin_password"]
-    except (KeyError, FileNotFoundError):
-        return None
+    """Clave maestra desde st.secrets. Formato canónico (igual en local y
+    en Streamlit Community Cloud): admin_password = "..." al tope del
+    archivo. Se acepta [auth].admin_password por compatibilidad."""
+    for getter in (lambda: st.secrets["admin_password"],
+                   lambda: st.secrets["auth"]["admin_password"]):
+        try:
+            return getter()
+        except (KeyError, FileNotFoundError):
+            continue
+    return None
 
 
 def current_role() -> str:
@@ -43,24 +51,42 @@ def is_admin() -> bool:
     return current_role() == ADMIN
 
 
-def login_widget() -> None:
-    """Caja de login/logout en el sidebar. Setea st.session_state['role']."""
-    with st.sidebar:
-        if is_admin():
-            st.markdown("**Rol: Super User**")
-            if st.button("Cerrar sesión", use_container_width=True):
-                st.session_state["role"] = VIEWER
+@st.dialog("🔒 Acceso administrativo")
+def _login_dialog() -> None:
+    if is_admin():
+        st.markdown("Sesión activa como **Super User**.")
+        # TODO(nico): quitar este recordatorio antes de abrir la app al
+        # público — solo lo ve el admin logueado.
+        st.info(
+            "**Despliegue en Streamlit Community Cloud:** la clave NO viaja "
+            "con el repo (secrets.toml está gitignored). Configúrala en "
+            "share.streamlit.io → tu app → **Settings → Secrets** y pega:\n"
+            "```toml\nadmin_password = \"TU_CLAVE_FUERTE\"\n```\n"
+            "En local vive en `.streamlit/secrets.toml`.")
+        if st.button("Cerrar sesión", use_container_width=True):
+            st.session_state["role"] = VIEWER
+            st.rerun()
+        return
+    st.caption("Las predicciones son públicas. El ingreso de "
+               "resultados requiere clave de administrador.")
+    with st.form("login", clear_on_submit=True, border=False):
+        pwd = st.text_input("Clave de administrador", type="password")
+        if st.form_submit_button("Entrar como admin",
+                                 use_container_width=True):
+            if verify_password(pwd, _secret_password()):
+                _LOG.info("login admin OK")
+                st.session_state["role"] = ADMIN
                 st.rerun()
-            return
-        st.markdown("**Modo espectador**")
-        st.caption("Las predicciones son públicas. El ingreso de "
-                   "resultados requiere clave de administrador.")
-        with st.form("login", clear_on_submit=True, border=False):
-            pwd = st.text_input("Clave de administrador", type="password")
-            if st.form_submit_button("Entrar como admin",
-                                     use_container_width=True):
-                if verify_password(pwd, _secret_password()):
-                    st.session_state["role"] = ADMIN
-                    st.rerun()
-                else:
-                    st.error("Clave incorrecta o auth no configurada.")
+            else:
+                _LOG.warning("login admin fallido (clave incorrecta o "
+                             "auth sin configurar)")
+                st.error("Clave incorrecta o auth no configurada.")
+
+
+def login_entry() -> None:
+    """Botón de login/logout para el header. Abre el modal de acceso
+    (spec §8: NO usa st.sidebar — el header nativo de Streamlit está
+    oculto por CSS y se llevaba consigo el control de re-expandirlo)."""
+    label = "👑 Super User" if is_admin() else "🔒 Acceso admin"
+    if st.button(label, key="login_entry", use_container_width=True):
+        _login_dialog()

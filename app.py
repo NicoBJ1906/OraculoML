@@ -12,11 +12,26 @@ from __future__ import annotations
 
 import html as html_lib
 import json
+import logging
 import sys
+import time
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
+
+# ---- logging a logs/app.log (diagnóstico: cachés, sim, ingesta, login)
+_LOGROOT = logging.getLogger("mundial")
+if not _LOGROOT.handlers:
+    (ROOT / "logs").mkdir(exist_ok=True)
+    _h = RotatingFileHandler(ROOT / "logs" / "app.log", maxBytes=500_000,
+                             backupCount=2, encoding="utf-8")
+    _h.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    _LOGROOT.addHandler(_h)
+    _LOGROOT.setLevel(logging.INFO)
+LOG = logging.getLogger("mundial.app")
 
 import joblib
 import pandas as pd
@@ -134,14 +149,14 @@ section[data-testid="stMain"], .block-container {position: relative; z-index: 1;
 @keyframes drift2 {to {transform: translate(-130px, 100px) scale(1.12);}}
 @keyframes drift3 {to {transform: translate(110px, -130px) scale(1.25);}}
 
-/* ---- sidebar (RBAC) ---- */
-section[data-testid="stSidebar"] {
-  background: var(--surface-solid);
-  border-right: 1px solid var(--border);}
-section[data-testid="stSidebar"] p, section[data-testid="stSidebar"] label,
-section[data-testid="stSidebar"] strong {color: var(--text) !important;}
-section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p
-  {color: var(--muted) !important;}
+/* ---- sidebar: ya no se usa (login via modal, spec §8), pero si algo
+   llegara a renderizar en él, el control nativo de expandir/colapsar
+   debe seguir visible aunque el header esté oculto ---- */
+div[data-testid="stSidebarCollapsedControl"],
+span[data-testid="stSidebarCollapsedControl"],
+div[data-testid="collapsedControl"] {
+  visibility: visible !important; position: fixed; top: 10px; left: 10px;
+  z-index: 999; color: var(--text);}
 
 /* ---- hero ---- */
 .hero {
@@ -219,10 +234,17 @@ hr {border-color: var(--border) !important;}
 .mc-prob-block.d .val {color: var(--text);}
 .mc-prob-block.a .val {color: var(--bar-a1);}
 
-/* ---- mc-probs heredado (podium Camino al título) ---- */
+/* ---- podio Camino al título ---- */
 .mc-probs {display: flex; font-size: .78rem; font-weight: 600; color: var(--muted);}
 .mc-probs span:first-child {color: var(--accent);}
 .mc-probs span:last-child {color: var(--bar-a1);}
+.podium-pct {font-size: 2rem; font-weight: 800; letter-spacing: -.02em;
+  line-height: 1.15; margin-top: 4px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;}
+.podium-lbl {font-size: .6rem; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 10px;}
 .mc-btn-xai {position: absolute; top: 10px; right: 12px;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 999px; width: 28px; height: 28px; display: flex;
@@ -265,6 +287,74 @@ div[data-testid="stDialog"] div[data-testid="stMarkdownContainer"] p {color: var
 .xai-stat.pos .value {color: var(--accent2);}
 .xai-stat.neg .value {color: var(--bar-a1);}
 .xai-divider {height: 1px; background: var(--border); margin: 8px 0;}
+
+/* ---- box pedagógico Elo (glassmorphism) ---- */
+.elo-tooltip-box {
+  background: color-mix(in srgb, var(--surface-solid) 75%, transparent);
+  backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid var(--border); border-radius: 18px;
+  padding: 20px 24px; margin: 4px 0 8px 0; color: var(--text);
+  box-shadow: 0 10px 38px var(--shadow);}
+.elo-tooltip-box p, .elo-tooltip-box li {color: var(--text) !important;}
+
+/* ---- slider de horizonte: separación de las tarjetas ---- */
+div[data-testid="stSlider"] {margin-bottom: 32px; padding-top: 34px;}
+div[data-testid="stSliderThumbValue"] {
+  white-space: nowrap; min-width: 30px; text-align: center;
+  font-size: .8rem !important; font-weight: 700; color: #fff !important;
+  background: var(--accent); padding: 2px 8px; border-radius: 999px;
+  box-shadow: 0 2px 8px var(--glow);}
+
+/* ---- centrado de botones nativos (Explicar pronóstico) ---- */
+div[data-testid="stButton"] {display: flex; justify-content: center;
+  width: 100%; margin-top: 10px;}
+
+/* ---- modal XAI: tema nativo forzado a las vars ---- */
+div[data-testid="stDialog"] > div, div[role="dialog"] {
+  background: var(--surface-solid) !important; color: var(--text) !important;
+  border: 1px solid var(--border) !important;}
+div[data-testid="stDialog"] p, div[data-testid="stDialog"] span,
+div[data-testid="stDialog"] label, div[role="dialog"] h1,
+div[role="dialog"] h2, div[role="dialog"] h3 {color: var(--text) !important;}
+
+/* ---- modal de login: input y botón integrados en ambos temas ---- */
+div[data-testid="stDialog"] .stTextInput input {
+  background: var(--input-bg) !important; color: var(--text) !important;
+  border: 1px solid var(--border) !important; border-radius: 12px !important;}
+div[data-testid="stDialog"] .stTextInput input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--glow) !important;}
+div[data-testid="stDialog"] .stTextInput button,
+div[data-testid="stDialog"] .stTextInput svg {
+  color: var(--muted) !important; fill: var(--muted) !important;}
+div[data-testid="stDialog"] [data-testid="stCaptionContainer"] p {
+  color: var(--muted) !important;}
+div[data-testid="stDialog"] div[data-testid="stFormSubmitButton"] button {
+  background: linear-gradient(135deg, var(--accent), var(--accent2)) !important;
+  color: #fff !important; border: none !important;
+  box-shadow: 0 6px 22px var(--glow);}
+div[data-testid="stDialog"] > div > button svg {fill: var(--muted);}
+
+/* ---- date picker (calendario de st.date_input, tab Eliminatorias):
+   sin colores quemados — solo variables del tema ---- */
+div[data-baseweb="calendar"], div[data-baseweb="datepicker"] {
+  background: var(--surface-solid) !important;
+  border-radius: 16px !important; color: var(--text) !important;}
+div[data-baseweb="calendar"] div, div[data-baseweb="calendar"] span,
+div[data-baseweb="calendar"] button {
+  color: var(--text) !important; background: transparent;}
+div[data-baseweb="calendar"] svg {fill: var(--text) !important;}
+div[data-baseweb="calendar"] [aria-selected="true"],
+div[data-baseweb="calendar"] [aria-selected="true"] > div {
+  background: var(--accent) !important; color: #fff !important;
+  border-radius: 999px;}
+div[data-baseweb="calendar"] [role="gridcell"]:hover > div {
+  background: color-mix(in srgb, var(--accent) 18%, transparent) !important;
+  border-radius: 999px;}
+div[data-baseweb="popover"]:has([data-baseweb="calendar"]) > div {
+  background: var(--surface-solid) !important;
+  border: 1px solid var(--border) !important; border-radius: 16px !important;
+  box-shadow: 0 16px 50px var(--shadow) !important;}
 
 /* ---- inputs y botones ---- */
 .stButton > button {
@@ -443,7 +533,10 @@ inject_effects()          # Lenis + GSAP + fondo WebGL (degradable, spec §7)
 # ----------------------------------------------------------------- carga
 @st.cache_resource
 def load_artifacts() -> dict:
-    return joblib.load(ROOT / "models" / "artifacts.joblib")
+    art = joblib.load(ROOT / "models" / "artifacts.joblib")
+    LOG.info("artifacts cargados: %s partidos hasta %s",
+             art.get("n_train"), art.get("trained_until"))
+    return art
 
 
 @st.cache_data
@@ -478,8 +571,13 @@ def build_engine(live_tok: str) -> LiveEngine:
     cuando cambia cualquier archivo de data/live/ (live_tok)."""
     art = load_artifacts()
     matches = pd.read_parquet(ROOT / "data" / "interim" / "matches.parquet")
-    return LiveEngine(matches, art["clf"], art["pois_home"],
-                      art["pois_away"], art["rho"], art["blend"], STORE)
+    t0 = time.perf_counter()
+    eng = LiveEngine(matches, art["clf"], art["pois_home"],
+                     art["pois_away"], art["rho"], art["blend"], STORE)
+    LOG.info("LiveEngine construido (token=%s) en %.1fs: %s históricos, "
+             "%s en vivo", live_tok, time.perf_counter() - t0,
+             len(matches), len(STORE.results()))
+    return eng
 
 
 @st.cache_data
@@ -490,8 +588,113 @@ def run_simulation(live_tok: str, n_sims: int) -> tuple[pd.DataFrame, dict]:
     groups = teams.groupby("group")["name_canonical"].apply(list).to_dict()
     sim = TournamentSimulator(eng, load_fixtures(), STORE.results(),
                               load_ko_raw(), groups)
+    t0 = time.perf_counter()
     df = sim.run(n_sims)
+    LOG.info("Monte Carlo: %s sims en %.1fs (token=%s); favorito=%s",
+             n_sims, time.perf_counter() - t0, live_tok,
+             df.iloc[0]["team"] if len(df) else "?")
     return df, sim.slot_stats
+
+
+@st.cache_data
+def build_bracket_payload(live_tok: str, n_sims: int) -> dict:
+    """Payload del bracket (spec §7) con propagación DETERMINISTA
+    (invariante U4): los entrantes a R32 son los ocupantes modales del
+    Monte Carlo, pero de ahí en adelante en cada llave avanza el equipo
+    con P(avanza) > 50% en ESE cruce (o el ganador real si ya se ingresó).
+    Las marginales de slot_stats NO componen entre rondas: solo se usan
+    para los pct mostrados."""
+    from mundial.predict.montecarlo import HOST_OF_COUNTRY, _ground_country
+
+    _, slots = run_simulation(live_tok, n_sims)
+    eng = build_engine(live_tok)
+    fx = load_fixtures()
+
+    def _flag_url(team: str | None, size: int = 40) -> str | None:
+        iso = FLAG_ISO.get(team or "")
+        return f"https://flagcdn.com/w{size}/{iso}.png" if iso else None
+
+    # ganadores reales de KO ya ingresados (mismo criterio del simulador)
+    lv = STORE.results()
+    gkeys = set(zip(fx.home_team, fx.away_team))
+    ko_real: dict[frozenset, str] = {}
+    for r in lv.itertuples(index=False):
+        if (r.home_team, r.away_team) in gkeys:
+            continue
+        w = getattr(r, "ko_winner", None)
+        if not isinstance(w, str) or not w:
+            hs, as_ = int(r.home_score), int(r.away_score)
+            w = (r.home_team if hs > as_
+                 else r.away_team if as_ > hs else None)
+        if w:
+            ko_real[frozenset((r.home_team, r.away_team))] = w
+
+    ko = sorted(load_ko_raw(), key=lambda m: m.get("num", 999))
+    ko = [m for m in ko if m["round"] != "Match for third place"]
+    round_lbl = {"Round of 32": "Dieciseisavos", "Round of 16": "Octavos",
+                 "Quarter-final": "Cuartos", "Semi-final": "Semifinal",
+                 "Final": "Final"}
+
+    det_win: dict[str, str] = {}          # "W74" -> equipo que avanza
+
+    def _occupant(ref: str, modal: list) -> tuple[str | None, float | None]:
+        """Lado de la llave: ganador determinista de la llave previa, o el
+        ocupante modal del Monte Carlo (entrantes desde grupos)."""
+        team = det_win.get(str(ref)) or (modal[0][0] if modal else None)
+        if team is None:
+            return None, None
+        share = dict(modal).get(team)
+        return team, (round(100 * share, 1) if share is not None else None)
+
+    per_round: dict[str, list] = {k: [] for k in round_lbl}
+    champion = None
+    for i, m in enumerate(ko):    # orden por num: cada ronda llega resuelta
+        mk = str(m.get("num", f"x{i}"))
+        ss = slots.get(mk, {"t1": [], "t2": [], "w": []})
+        t1, s1 = _occupant(m["team1"], ss["t1"])
+        t2, s2 = _occupant(m["team2"], ss["t2"])
+        win, pwin = None, None
+        if t1 and t2:
+            win = ko_real.get(frozenset((t1, t2)))
+            if win:
+                pwin = 100
+            else:
+                host = HOST_OF_COUNTRY[_ground_country(m.get("ground", ""))]
+                date = pd.Timestamp(m["date"])
+                if t2 == host:    # localía solo si un anfitrión juega en casa
+                    p1 = 1 - eng.predict_match(date, t2, t1,
+                                               False)["p_home_advances"]
+                else:
+                    p1 = eng.predict_match(date, t1, t2,
+                                           t1 != host)["p_home_advances"]
+                win = t1 if p1 >= 0.5 else t2
+                pwin = round(100 * max(p1, 1 - p1))
+        num = m.get("num")
+        if num is not None and win:
+            det_win[f"W{num}"] = win
+        srcs = [int(str(x)[1:]) if str(x).startswith("W") else None
+                for x in (m["team1"], m["team2"])]
+        per_round[m["round"]].append({
+            "num": num if num is not None else "final",
+            "src1": srcs[0], "src2": srcs[1],
+            "t1": {"team": t1, "flag": _flag_url(t1), "pct": s1} if t1 else None,
+            "t2": {"team": t2, "flag": _flag_url(t2), "pct": s2} if t2 else None,
+            "win": win, "pwin": pwin,
+            "cands1": ss["t1"][:3], "cands2": ss["t2"][:3],
+            "date": pd.Timestamp(m["date"]).strftime("%d %b").upper(),
+            "ground": m.get("ground", "")})
+        if m["round"] == "Final" and win:
+            fshare = dict(ss["w"]).get(win)
+            champion = {"team": win, "flag": _flag_url(win),
+                        "pct": round(100 * fshare, 1) if fshare else None}
+
+    LOG.info("bracket determinista: %s llaves, %s KO reales, campeón=%s",
+             len(det_win), len(ko_real),
+             champion["team"] if champion else "?")
+    return {"rounds": [{"key": rnd.replace(" ", "_"), "label": lbl,
+                        "matches": per_round[rnd]}
+                       for rnd, lbl in round_lbl.items()],
+            "champion": champion}
 
 
 @st.cache_data
@@ -694,6 +897,8 @@ def save_match(date, home, away, gh, ga, neutral, stage, details,
          "formation_away": details["formation_away"]},
         players=details["players"], cards=details["cards"],
         injuries=details["injuries"])
+    LOG.info("resultado guardado: %s %s-%s %s (%s)", home, int(gh), int(ga),
+             away, stage)
     st.session_state["form_nonce"] = st.session_state.get("form_nonce", 0) + 1
     for kind in ("ev", "cd", "in"):       # limpia los editores de filas
         st.session_state.pop(f"rows_{kind}_{prefix}", None)
@@ -785,6 +990,7 @@ def xai_dialog(home: str, away: str, date, p: dict, adj_h: float, adj_a: float,
 
     # ---- sección pedagógica: qué significa todo esto (para no expertos)
     with st.expander("📚 ¿Qué es el rating Elo y cómo afecta esta predicción?"):
+        st.markdown('<div class="elo-tooltip-box">', unsafe_allow_html=True)
         st.markdown(
             "**Elo** es un sistema de puntaje (nacido en el ajedrez) donde "
             "cada selección tiene un número que sube al ganar y baja al "
@@ -813,6 +1019,7 @@ def xai_dialog(home: str, away: str, date, p: dict, adj_h: float, adj_a: float,
                     "probabilidades y los goles esperados (λ) hacia el "
                     "favorito; las correcciones online del torneo ajustan "
                     "el ritmo de goles y los empates al final.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
     if st.button("Cerrar", type="primary"):
         st.rerun()
@@ -824,10 +1031,12 @@ fixtures = load_fixtures()
 live = STORE.results()
 engine = build_engine(STORE.token())
 
-hcol, tcol = st.columns([5, 1])
+hcol, acol, tcol = st.columns([4.4, 1.1, .9], vertical_alignment="center")
 hcol.markdown('<h1 class="hero">Oráculo personal de Nicolás — '
               '<span class="grad">Mundial 2026</span></h1>',
               unsafe_allow_html=True)
+with acol:
+    auth.login_entry()       # spec §8: login modal, sin sidebar
 tcol.toggle("Modo claro", key="light_mode")
 
 ls = engine.live_summary()
@@ -845,7 +1054,6 @@ pending = fixtures[~fixtures.apply(
     lambda r: (r.home_team, r.away_team) in played_keys, axis=1)]
 
 # ---- RBAC (spec §8): viewers no construyen el tab de ingesta
-auth.login_widget()
 IS_ADMIN = auth.is_admin()
 _labels = ["Próximos partidos", "Líderes", "Cuadro", "Eliminatorias",
            "Camino al título", "Tablas"]
@@ -865,9 +1073,33 @@ with tab_pred:
     if pending.empty:
         st.info("No quedan fixtures de fase de grupos pendientes.")
     else:
-        dias = st.slider("Días a mostrar", 1, 30, 4)
-        d0 = pending.date.min()
-        sel = pending[pending.date <= d0 + pd.Timedelta(days=dias - 1)]
+        # jornadas derivadas del calendario REAL: la n-ésima vez que un
+        # equipo juega es su Fecha n (los rivales van siempre parejos)
+        _cnt: dict[str, int] = {}
+        _md: dict[int, int] = {}
+        for _ridx, _r in fixtures.sort_values("date").iterrows():
+            _j = max(_cnt.get(_r.home_team, 0), _cnt.get(_r.away_team, 0)) + 1
+            _cnt[_r.home_team] = _cnt[_r.away_team] = _j
+            _md[_ridx] = _j
+        _MES = {6: "jun", 7: "jul"}
+        _rng: dict[int, tuple] = {}
+        for _ridx, _j in _md.items():
+            _d = fixtures.loc[_ridx, "date"]
+            _lo, _hi = _rng.get(_j, (_d, _d))
+            _rng[_j] = (min(_lo, _d), max(_hi, _d))
+        _hz = {(f"Fecha {j} — del {lo.day} {_MES[lo.month]} al "
+                f"{hi.day} {_MES[hi.month]}"): j
+               for j, (lo, hi) in sorted(_rng.items())}
+        _hz["Toda la fase de grupos"] = 0
+        _pick = st.selectbox("📅 Jornada mundialista", list(_hz),
+                             help="Qué jornada de la fase de grupos mostrar. "
+                                  "Las fechas salen del calendario oficial.")
+        _jor = _hz[_pick]
+        sel = (pending if _jor == 0
+               else pending[pending.index.map(_md) == _jor])
+        if sel.empty:
+            st.info("Todos los partidos de esta jornada ya tienen "
+                    "resultado ingresado.")
         cards_data = []
         for idx in range(len(sel)):
             r = sel.iloc[idx]
@@ -883,7 +1115,8 @@ with tab_pred:
             for col, (r, p, adj, html, idx) in zip(cols, cards_data[i:i + 3]):
                 col.markdown(html, unsafe_allow_html=True)
                 if col.button("📊 Explicar pronóstico",
-                              key=f"xai_pred_{idx}"):
+                              key=f"xai_pred_{idx}",
+                              use_container_width=True):
                     xai_dialog(r.home_team, r.away_team, r.date, p,
                                adj[0], adj[1], ls)
 
@@ -980,10 +1213,13 @@ if IS_ADMIN:  # RBAC: el tab solo existe para admin (spec R1)
                          "away_team", "xg_home", "xg_away", "weather",
                          "stage"]].copy()
             show["date"] = pd.to_datetime(show["date"]).dt.date
+            # OJO: nombres únicos — columnas duplicadas hacen que r[c]
+            # devuelva una Series y la celda imprima "Name: 0, dtype: ..."
             show = show.rename(columns={
-                "date": "Fecha", "home_team": "Local", "home_score": "",
-                "away_score": "", "away_team": "Visitante", "xg_home": "xG",
-                "xg_away": "xG", "weather": "Clima", "stage": "Fase"})
+                "date": "Fecha", "home_team": "Local", "home_score": "GL",
+                "away_score": "GV", "away_team": "Visitante",
+                "xg_home": "xG (L)", "xg_away": "xG (V)",
+                "weather": "Clima", "stage": "Fase"})
             st.markdown(tbl(show.fillna("—").sort_values("Fecha",
                                                          ascending=False),
                             flags={"Local", "Visitante"}, height=280),
@@ -1082,52 +1318,13 @@ with tab_bracket:
     c1.subheader("Cuadro del Mundial")
     n_sims_b = c2.selectbox("Simulaciones", [2000, 5000, 10000], index=1,
                             key="nsims_bracket")
-    st.caption("Filtra por fase con los botones. Cada llave muestra el "
-               "ocupante más probable según el Monte Carlo y en rojo el "
-               "favorito a avanzar; los cruces ya jugados quedan al 100%.")
+    st.caption("Filtra por fase con los botones. Las llaves se conectan con "
+               "su cruce de origen; en rojo, el equipo que avanza en cada "
+               "cruce (P(avanza) > 50%, determinista). Los cruces ya "
+               "ingresados quedan al 100%.")
     with st.spinner("Simulando el torneo..."):
-        simdf, slots = run_simulation(STORE.token(), n_sims_b)
-
-    def _flag_url(team: str, size: int = 40) -> str | None:
-        iso = FLAG_ISO.get(team)
-        return f"https://flagcdn.com/w{size}/{iso}.png" if iso else None
-
-    def _side(cands: list) -> dict | None:
-        """Lado de una llave según el contrato JSON del bracket (spec §7)."""
-        if not cands:
-            return None
-        team, share = cands[0]
-        return {"team": team, "flag": _flag_url(team),
-                "pct": round(100 * share, 1)}
-
-    ko = sorted(load_ko_raw(), key=lambda m: m.get("num", 999))
-    ko = [m for m in ko if m["round"] != "Match for third place"]
-    round_lbl = {"Round of 32": "Dieciseisavos", "Round of 16": "Octavos",
-                 "Quarter-final": "Cuartos", "Semi-final": "Semifinal",
-                 "Final": "Final"}
-
-    rounds_payload, champion = [], None
-    for rnd, label in round_lbl.items():
-        matches = []
-        for i, m in enumerate(ko):
-            if m["round"] != rnd:
-                continue
-            ss = slots.get(str(m.get("num", f"x{i}")),
-                           {"t1": [], "t2": [], "w": []})
-            winner = ss["w"][0][0] if ss["w"] else None
-            matches.append({
-                "t1": _side(ss["t1"]), "t2": _side(ss["t2"]), "win": winner,
-                "cands1": ss["t1"][:3], "cands2": ss["t2"][:3],
-                "date": pd.Timestamp(m["date"]).strftime("%d %b").upper(),
-                "ground": m.get("ground", "")})
-            if rnd == "Final" and ss["w"]:
-                champion = {"team": winner, "flag": _flag_url(winner),
-                            "pct": round(100 * ss["w"][0][1], 1)}
-        rounds_payload.append({"key": rnd.replace(" ", "_"),
-                               "label": label, "matches": matches})
-
-    render_bracket({"rounds": rounds_payload, "champion": champion},
-                   height=790)
+        payload = build_bracket_payload(STORE.token(), n_sims_b)
+    render_bracket(payload, height=790)
 
 # ------------------------------------------------ TAB 5: eliminatorias
 with tab_ko:
@@ -1205,8 +1402,8 @@ with tab_champ:
             f'<div style="margin-bottom:6px">{flag_img(r.team, 60)}</div>'
             f'<div style="font-weight:800;font-size:1.15rem;'
             f'color:var(--text)">{esc(r.team)}</div>'
-            f'<div class="mc-score" style="font-size:2rem">'
-            f'{100 * r.CAMPEON:.1f}%<small>campeón</small></div>'
+            f'<div class="podium-pct">{100 * r.CAMPEON:.1f}%</div>'
+            f'<div class="podium-lbl">Campeón</div>'
             f'<div class="mc-probs" style="justify-content:center;gap:14px">'
             f'<span>final {100 * r.F:.0f}%</span>'
             f'<span>semis {100 * r.SF:.0f}%</span></div>'
