@@ -173,6 +173,16 @@ intacto). **Invariante O2**: la capa live JAMÁS llama `model.fit()`.
   `build_engine` y `run_simulation` — la UI nunca muestra estado viejo.
 - **U3**: el modal XAI usa `engine.state.explain()` como única fuente — los
   valores en el modal y en la card son coherentes.
+- **U5 (responsividad móvil)**: la página NUNCA tiene scroll horizontal a
+  nivel de viewport. Estrategia mobile-first-fix con un único bloque
+  `@media (max-width: 768px)` al final de `BASE_CSS` (desktop intacto:
+  ninguna regla fuera del media query cambia). Los únicos contenedores con
+  scroll-x propio son: la tab-list (pills, scrollbar oculta), `.tblwrap`
+  (tablas) y el `#tree` del bracket DENTRO de su iframe
+  (`-webkit-overflow-scrolling: touch`) — el swipe horizontal ocurre solo
+  dentro del cuadro, el resto de la app queda anclada al viewport.
+  Anchos absolutos prohibidos en móvil: todo `min-width` fijo de filas
+  flex (`.audit-row`) se anula y la fila hace wrap.
 
 ## 6. Testing
 

@@ -210,6 +210,12 @@ NO con `git add`.
   duplicados `r[c]` devuelve una Series y la celda imprime basura).
 - Si tras editar módulos de `src/` la app "pierde" funciones nuevas:
   reiniciar streamlit (el proceso viejo cachea los imports).
+- Responsive móvil (invariante U5 del spec): TODO el CSS móvil vive en un
+  único `@media (max-width: 768px)` al final de `BASE_CSS` — nunca tocar
+  reglas desktop para arreglar móvil. Culpables históricos del overflow-x:
+  tab-list pill con `width: fit-content` (7 tabs > viewport), `min-width`
+  fijos de `.audit-row`, y el `#tree` del bracket (se arregla con
+  `min-width` interno + scroll-x DENTRO del iframe, jamás en la página).
 - Empates: el modelo les da probabilidad correcta pero casi nunca argmax —
   esperado, no es bug. Expectativa honesta: 55-60% acierto 1X2 es el techo
   del estado del arte; el valor real es la calibración.

@@ -585,6 +585,55 @@ div[data-testid="stVerticalBlockBorderWrapper"]:hover {
 .audit-row .ar-score {font-weight: 800; font-size: 1.05rem;
   color: var(--text); min-width: 64px; text-align: center;}
 .audit-row .ar-hit {font-size: 1.3rem; min-width: 36px; text-align: center;}
+
+/* ================= RESPONSIVE MÓVIL (invariante U5 del spec) =================
+   Único bloque móvil de toda la app — el desktop queda intacto por diseño.
+   Regla de oro: la PÁGINA nunca scrollea en X; solo tab-list, .tblwrap y
+   el bracket (dentro de su iframe) tienen scroll-x propio. */
+@media (max-width: 768px) {
+  /* -- corte global del desbordamiento fantasma -- */
+  .stApp, section[data-testid="stMain"],
+  div[data-testid="stMainBlockContainer"], .block-container {
+    max-width: 100vw !important; overflow-x: hidden !important;
+    box-sizing: border-box;}
+  .block-container {padding: 1.3rem .9rem 3rem .9rem;}
+
+  /* -- hero compacto -- */
+  .hero {font-size: 1.9rem;}
+  .hero-sub {font-size: .76rem;}
+
+  /* -- tab pill: 7 tabs > viewport → scroll-x interno, scrollbar oculta -- */
+  .stTabs [data-baseweb="tab-list"] {
+    width: 100%; max-width: 100%; overflow-x: auto;
+    flex-wrap: nowrap; scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;}
+  .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {display: none;}
+  .stTabs [data-baseweb="tab"] {padding: 7px 13px; font-size: .74rem;
+    white-space: nowrap; flex: none;}
+
+  /* -- cards: padding y tipografía a escala de bolsillo -- */
+  .glass {padding: 14px; border-radius: 18px;}
+  .match-card {min-height: 0;}
+  .mc-team {font-size: .76rem;}
+  .mc-team .flag img {width: 34px; height: 22px;}
+  .mc-prob-block .val {font-size: 1rem;}
+  .podium-pct {font-size: 1.5rem;}
+  .form-card {padding: 14px;}
+
+  /* -- auditoría: la suma de min-widths fijos rompe <420px → wrap -- */
+  .audit-row {flex-wrap: wrap; gap: 4px 12px; padding: 12px 14px;}
+  .audit-row .ar-rival {flex: 1 1 100%; white-space: normal;}
+  .audit-row .ar-date, .audit-row .ar-prob, .audit-row .ar-score,
+  .audit-row .ar-hit {min-width: 0 !important;}
+  .audit-row .ar-prob {text-align: left;}
+
+  /* -- modales a ancho completo del viewport móvil -- */
+  div[data-testid="stDialog"] > div {padding: 18px !important;
+    border-radius: 20px !important;}
+
+  /* -- blobs: blur de 130px castiga GPUs móviles -- */
+  .blob {filter: blur(80px);}
+}
 </style>
 """
 

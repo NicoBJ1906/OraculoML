@@ -21,9 +21,18 @@
               color: #fff; border-color: transparent;
               box-shadow: 0 4px 16px var(--glow); }
 
-  /* ---- modo árbol: columnas flex, espaciado por space-around ---- */
-  #tree { display: flex; gap: 12px; height: calc(100vh - 60px);
+  /* ---- modo árbol: columnas flex, espaciado por space-around ----
+     #treewrap es el ÚNICO scroller horizontal (invariante U5): en móvil
+     el árbol conserva un ancho mínimo legible y el swipe ocurre dentro
+     del iframe — la página padre nunca scrollea en X. */
+  #treewrap { height: calc(100vh - 60px); overflow-x: auto;
+              overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+  #tree { display: flex; gap: 12px; height: 100%;
           position: relative; }
+  @media (max-width: 768px) {
+    #tree { min-width: 880px; }
+    #focus { grid-template-columns: 1fr; }
+  }
   #links { position: absolute; inset: 0; z-index: 0;
            pointer-events: none; }
   #links path { fill: none; stroke: var(--border); stroke-width: 1.5; }
@@ -74,7 +83,7 @@
 </style>
 
 <div class="toolbar" id="bar"></div>
-<div id="tree"></div>
+<div id="treewrap"><div id="tree"></div></div>
 <div id="focus"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
@@ -167,8 +176,10 @@
   linksSvg.id = 'links';
   tree.prepend(linksSvg);
 
+  const treeWrap = document.getElementById('treewrap');
+
   function drawLinks() {
-    if (tree.style.display === 'none') return;
+    if (treeWrap.style.display === 'none') return;
     const tr = tree.getBoundingClientRect();
     if (!tr.width) return;
     linksSvg.setAttribute('width', tr.width);
@@ -206,7 +217,7 @@
       b.classList.toggle('on', b.dataset.k === key));
     if (key === 'ALL') {
       focusEl.style.display = 'none';
-      tree.style.display = 'flex';
+      treeWrap.style.display = 'block';
       drawLinks();              // layout final ya disponible (GSAP solo
                                 // anima transform, no afecta los rects)
       if (window.gsap) gsap.fromTo('#tree .match',
@@ -216,7 +227,7 @@
     } else {
       const r = DATA.rounds.find(x => x.key === key);
       focusEl.innerHTML = r.matches.map(m => matchHtml(m, true)).join('');
-      tree.style.display = 'none';
+      treeWrap.style.display = 'none';
       focusEl.style.display = 'grid';
       if (window.gsap) gsap.fromTo('#focus .match',
         {opacity: 0, scale: .85, y: 22},
