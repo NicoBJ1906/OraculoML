@@ -158,13 +158,36 @@ python scripts/06_build_rosters.py      # rosters Gold
 
 ## 7. Despliegue (Streamlit Community Cloud)
 
-- Clave admin: share.streamlit.io → app → Settings → Secrets →
-  `admin_password = "..."` (mismo formato que el secrets.toml local).
-- OJO: `models/artifacts.joblib` y `data/` están gitignored — para Cloud
-  hay que decidir: versionarlos, regenerar en arranque o storage externo
-  (PENDIENTE de decisión del usuario).
-- `st.components.v1.html` está deprecado (aviso: se elimina tras
-  2026-06-01, fecha vencida) — migrar a `st.iframe` pronto.
+URL pública: https://oraculo-2026.streamlit.app/
+
+### Secrets requeridos (share.streamlit.io → app → Settings → Secrets)
+```toml
+admin_password = "clave-fuerte-aqui"
+
+# PAT GitHub para persistencia de data/live/ (Opción A — ver github_sync.py)
+github_token = "ghp_..."
+# github_repo = "NicoBJ1906/mundial-2026-ml"   # por defecto
+# github_branch = "main"                          # por defecto
+```
+
+### Cómo funciona la persistencia (Opción A — GitHub como store)
+- Cuando el admin ingresa un resultado, `LiveStore.add_match()` escribe los
+  4 CSVs localmente y luego llama a `github_sync.sync_live_files()`.
+- Sync usa la **Git Trees API**: un único commit atómico para los 4 archivos
+  → sin commits intermedios, sin race conditions.
+- Streamlit Cloud detecta el push y redespliega (~60 s).
+- Si GitHub no está disponible, se loguea WARNING y la app sigue sin caerse.
+  Los datos quedan en el filesystem del servidor Cloud (efímero) hasta el
+  próximo reinicio, y el próximo partido intentará sincronizar de nuevo.
+- Token: Fine-grained PAT, permiso `Contents: Read and write` solo en este repo.
+
+### Archivos versionados para Cloud
+Los 7 archivos de `data/` y `models/` están en el repo con excepción explícita
+en `.gitignore` (ver sección). `data/live/*.csv` se sincronizan vía API GitHub,
+NO con `git add`.
+
+- `st.components.v1.html` está deprecado (fecha vencida 2026-06-01) — migrar
+  a `st.iframe` en próxima sesión.
 
 ## 8. Decisiones clave / gotchas (no romper)
 

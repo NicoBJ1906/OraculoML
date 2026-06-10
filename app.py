@@ -44,7 +44,20 @@ from mundial.live.engine import LiveEngine
 from mundial.live.store import LiveStore
 from mundial.predict.montecarlo import TournamentSimulator
 
-STORE = LiveStore(ROOT)
+def _github_cfg() -> tuple[str | None, str, str]:
+    """Lee configuración GitHub desde st.secrets (falla silenciosamente)."""
+    try:
+        token = str(st.secrets["github_token"])
+        repo = str(st.secrets.get("github_repo", "NicoBJ1906/mundial-2026-ml"))
+        branch = str(st.secrets.get("github_branch", "main"))
+        return token, repo, branch
+    except Exception:  # noqa: BLE001 — sin secrets o en tests bare
+        return None, "NicoBJ1906/mundial-2026-ml", "main"
+
+
+_gh_token, _gh_repo, _gh_branch = _github_cfg()
+STORE = LiveStore(ROOT, github_token=_gh_token, github_repo=_gh_repo,
+                  github_branch=_gh_branch)
 HOSTS = {"United States", "Mexico", "Canada"}
 esc = html_lib.escape
 

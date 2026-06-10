@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from mundial.live.github_sync import sync_live_files
+
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 _FORMULA_PREFIX = "=+-@\t "
 
@@ -51,15 +53,41 @@ def make_match_id(date, home: str, away: str) -> str:
 
 
 class LiveStore:
-    """Lectura/escritura atómica por partido sobre los CSV de data/live/."""
+    """Lectura/escritura atómica por partido sobre los CSV de data/live/.
 
-    def __init__(self, root: Path):
+    Si se proporciona ``github_token``, cada escritura se sincroniza al repo
+    GitHub en un único commit atómico (Opción A de persistencia para
+    Streamlit Cloud). Sin token el comportamiento es idéntico al local.
+    """
+
+    def __init__(
+        self,
+        root: Path,
+        *,
+        github_token: str | None = None,
+        github_repo: str = "NicoBJ1906/mundial-2026-ml",
+        github_branch: str = "main",
+    ):
         self.dir = Path(root) / "data" / "live"
         self.dir.mkdir(parents=True, exist_ok=True)
         self.f_results = self.dir / "live_results.csv"
         self.f_players = self.dir / "live_players.csv"
         self.f_cards = self.dir / "live_discipline.csv"
         self.f_injuries = self.dir / "live_injuries.csv"
+        self._github_token = github_token
+        self._github_repo = github_repo
+        self._github_branch = github_branch
+
+    def _sync(self) -> None:
+        """Sincroniza los 4 CSVs a GitHub si hay token configurado."""
+        if not self._github_token:
+            return
+        sync_live_files(
+            [self.f_results, self.f_players, self.f_cards, self.f_injuries],
+            token=self._github_token,
+            repo=self._github_repo,
+            branch=self._github_branch,
+        )
 
     # ------------------------------------------------ lectura
     def _read(self, path: Path, cols: list[str]) -> pd.DataFrame:
@@ -121,6 +149,7 @@ class LiveStore:
                      [{**stamp, **c} for c in _clean(cards)])
         self._append(self.f_injuries, INJURY_COLS,
                      [{**stamp, **i} for i in _clean(injuries)])
+        self._sync()
         return mid
 
     def delete_match(self, match_id: str) -> None:
@@ -131,6 +160,7 @@ class LiveStore:
                            (self.f_injuries, INJURY_COLS)):
             df = self._read(path, cols)
             df[df.match_id != match_id].to_csv(path, index=False)
+        self._sync()
 
     # ------------------------------------------------ utilidades
     def token(self) -> str:
