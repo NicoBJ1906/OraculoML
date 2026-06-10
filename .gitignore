@@ -21,6 +21,7 @@ mlruns/
 # Secretos
 .env
 config/secrets.yaml
+.streamlit/secrets.toml
 
 # Testing / herramientas
 .pytest_cache/

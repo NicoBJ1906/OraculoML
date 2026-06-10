@@ -4,7 +4,7 @@ Fuente de verdad de la arquitectura. Cualquier cambio de código que viole un
 contrato de este documento debe actualizar primero este spec (Spec-Driven
 Development).
 
-Versión: 1.0 · 2026-06-09
+Versión: 1.1 · 2026-06-09
 
 ---
 
@@ -137,13 +137,42 @@ intacto). **Invariante O2**: la capa live JAMÁS llama `model.fit()`.
 
 ## 5. UI (`app.py`)
 
-- Temas vía CSS variables (`PALETTES` + `BASE_CSS`); las tablas de display son
-  HTML propio (`tbl()`). Los editores de captura usan widgets DOM (no
-  `st.data_editor`/canvas) para respetar ambos temas.
-- **Invariante U1**: toda predicción mostrada pasa por `LiveEngine` (nunca por
-  el engine base directamente).
-- **Invariante U2**: tras guardar/borrar un partido, el `token()` del store
-  invalida `build_engine` y `run_simulation` — la UI nunca muestra estado viejo.
+### Diseño visual
+- **Tipografía**: Poppins (Google Fonts) en todo el sistema.
+- **Tema dual**: CSS variables inyectadas (`PALETTES` en dark/light) + toggle en
+  UI. Fondo aurora animado con 3 blobs en drift perpetuo.
+- **Glassmorphism**: `backdrop-filter: blur(28px) saturate(160%)` en cards,
+  tabs, modales y métricas — consistente en ambos temas.
+- **Motion UI**: transiciones `cubic-bezier(.16,1,.3,1)` en hover/active de
+  botones, cards y métricas.
+- **Scrollbar**: personalizada (6px, bordes redondeados).
+
+### Componentes
+
+| Componente | Implementación | Contrato |
+|---|---|---|
+| **match_card** | HTML inline con clases CSS (`glass`, `mc-*`). Muestra flags, nombres, y probabilidades tipográficas (H/D/A sin barra). Botón "Explicar pronóstico" por card. |  |
+| **xai_dialog** | `st.dialog` con desglose completo: Elo base, momentum, sanciones/lesiones, ajuste total, Elo efectivo, correcciones online, λ Poisson, top-5 marcadores. | Invariante S2: `explain()` es la fuente de toda verdad XAI. |
+| **tbl** | Tabla HTML propia con theming vía `tblwrap`/`tbl` clases. Soporta flags y barras de progreso. | Reemplaza a `st.dataframe` para respetar el tema oscuro/claro. |
+| **leader-card** | Tarjetas animadas con gradiente, hover `translateY(-4px) scale(1.02)` y glow. | Top-10 goleadores, asistencias y tarjetas. |
+| **form-card** | Contenedor glass con padding y hover sutil para los formularios de ingreso. | Separa visualmente las secciones de registro. |
+| **bracket** | Flexbox horizontal con overflow-x auto. 6 columnas (R32 → Campeón). Cada llave muestra equipo favorito + P de avance. | `slot_stats` del Monte Carlo alimenta los ocupantes. |
+
+### Flujo de ingesta de resultados (Tab 2)
+- Dos paneles lado a lado: fase de grupos (selector de fixture pendiente) y
+  eliminatorias/manual (selectores libres).
+- Tooltips en inputs de goles y xG.
+- `detail_block` dentro de cada panel con contexto opcional: xG, goleadores,
+  tarjetas, lesiones, clima, formación.
+- Tabla de resultados ingresados con flag de equipo y botón de borrado.
+
+### Invariantes
+- **U1**: toda predicción mostrada pasa por `LiveEngine` (nunca por el engine
+  base directamente).
+- **U2**: tras guardar/borrar un partido, el `token()` del store invalida
+  `build_engine` y `run_simulation` — la UI nunca muestra estado viejo.
+- **U3**: el modal XAI usa `engine.state.explain()` como única fuente — los
+  valores en el modal y en la card son coherentes.
 
 ## 6. Testing
 
@@ -151,3 +180,59 @@ intacto). **Invariante O2**: la capa live JAMÁS llama `model.fit()`.
 - Cobertura mínima exigida: lógica de sanciones/lesiones (S1, reset de
   amarillas), consolidación (M2, dedup), desempate H2H (sección 4).
 - Los tests no tocan `data/` real: usan `tmp_path`.
+
+## 7. Frontend SPA inyectado (`src/frontend/`)
+
+Los efectos web premium viven FUERA de `app.py` en `src/frontend/`
+(templates HTML/JS/CSS) y se inyectan vía `st.components.v1.html` (iframe
+same-origin que opera sobre `window.parent`). Degradables: si un CDN falla,
+la app sigue 100% funcional.
+
+### Contrato JSON del bracket (`render_bracket`)
+
+```json
+{
+  "rounds": [{"key": "R32", "label": "Dieciseisavos",
+              "matches": [{"t1": {"team": "...", "flag": "url", "pct": 64},
+                           "t2": {...}, "win": "team|null",
+                           "cands1": [["team", 0.64], ...],
+                           "date": "28 JUN", "ground": "..."}]}],
+  "champion": {"team": "...", "flag": "url", "pct": 25}
+}
+```
+
+### Contrato de theming (frontend)
+
+- Única fuente de verdad: CSS variables `--bg/--surface/--text/--accent/...`
+  inyectadas en el `:root` del documento padre por `inject_theme()`.
+- PROHIBIDO hardcodear colores en JS/HTML inyectado: los componentes leen
+  `getComputedStyle(parent.documentElement)` y se re-aplican con un
+  **MutationObserver** sobre `<head>` (el toggle de tema re-inyecta el
+  `<style>` de `:root`).
+- Stack: Lenis (scroll), GSAP (transiciones de tab y bracket), Three.js
+  (fondo liquid gradient con shader, colores = vars del tema).
+
+## 8. RBAC (`src/mundial/auth.py`)
+
+| Rol | Acceso | Activación |
+|---|---|---|
+| `viewer` (default) | Próximos, Líderes, Cuadro, Eliminatorias, Camino, Tablas, XAI | ninguna |
+| `admin` | todo + **Ingresar resultado** (motor en vivo) | contraseña de `st.secrets["auth"]["admin_password"]` |
+
+- La contraseña vive en `.streamlit/secrets.toml` (GITIGNORED); se versiona
+  `secrets.toml.example`. Sin secrets configurados, la app queda en viewer.
+- Invariante R1: el rol vive en `st.session_state["role"]`; el tab de
+  ingesta NO se construye para viewers (no solo se oculta).
+
+### 2.4 Gold: `rosters_2026.parquet` (plantillas normalizadas)
+
+| columna | tipo | contrato |
+|---|---|---|
+| team | str | nombre canónico (uno de los 64 en fixtures) |
+| player | str | nombre normalizado (fuente: goalscorers histórico) |
+| goals | int | goles registrados desde `since` (orden del dropdown) |
+| last_seen | date | último gol registrado |
+
+Generado por `scripts/06_build_rosters.py` (lógica testeable en
+`mundial.ingest.rosters.build_rosters`). Los selectores de jugador de la UI
+leen SOLO de aquí (anti-typos), con opción de escape "Otro…" para texto libre.

@@ -100,6 +100,37 @@ _adjust_probs) — el engine base sigue siendo bit-a-bit el de entrenamiento.
   online). Si algún día se integra StatsBomb/API-Football, ahí sí podrían
   ser features y habría que reentrenar.
 
+## Sesión 2026-06-09 (noche) — producción y publicación
+
+- **SDD**: `docs/ARCHITECTURE_SPEC.md` es la fuente de verdad (contratos e
+  invariantes S1/S2, L1/L2, M2, O1/O2). Cambios de código que los violen
+  deben actualizar el spec primero.
+- **Tests**: 19 pytest en verde (`tests/`): sanciones/lesiones/reset de
+  amarillas, consolidación con dedup, desempate H2H. `pyproject.toml` define
+  `pythonpath=["src"]`. Correr con `.venv/Scripts/python -m pytest`.
+- **XAI**: `TournamentState.explain(team, date)` → momentum + items con
+  etiqueta y puntos. UI: chip "Δ EN VIVO" en cards, expander de desglose en
+  Próximos, detalle por equipo en Eliminatorias.
+- **Editores de captura**: `dynamic_rows()` con widgets DOM (st.data_editor
+  canvas eliminado — no se podía tematizar). Al guardar se limpian via
+  `rows_{ev,cd,in}_{prefix}` en session_state.
+- **Monte Carlo**: `rank_group()` (función pura) aplica desempate FIFA
+  completo Pts→DG→GF→H2H entre empatados→azar.
+- **GitHub**: repo privado `NicoBJ1906/mundial-2026-ml`, rama main. `gh` NO
+  está instalado: usar API REST con `$GITHUB_TOKEN` y push con
+  `git -c http.extraHeader="Authorization: Basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"`
+  (nunca persistir el token en .git/config).
+- `.streamlit/config.toml` ahora en paleta roja (#ff2d55) para que los
+  widgets nativos coincidan con el tema dark.
+
+### PENDIENTE PRÓXIMA SESIÓN (prioridad)
+
+- **El usuario reportó "varias fallas" en la UI/app que verá mañana
+  (2026-06-10) — preguntarle cuáles son antes de tocar otra cosa.**
+- Candidatos conocidos: steppers de number_input con fondo oscuro en modo
+  claro; expanders que requieren doble clic a veces; el primer push con
+  credential-helper falló (usar el extraHeader de arriba).
+
 ## Pendiente / ideas
 
 - `tests/` y `evaluate/` siguen vacíos (los chequeos viven en los scripts).

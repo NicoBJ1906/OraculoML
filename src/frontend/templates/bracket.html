@@ -1,0 +1,181 @@
+<!-- Cuadro del Mundial interactivo (spec §7).
+     Layout: flex de columnas con justify-content:space-around — CERO
+     matemáticas de márgenes. Filtro de fases animado con GSAP (elastic).
+     Theming: hereda las CSS vars del documento padre; MutationObserver
+     re-aplica al togglear el tema. -->
+<style>
+  :root { color-scheme: dark light; }
+  * { box-sizing: border-box; margin: 0;
+      font-family: 'Poppins','Inter',-apple-system,sans-serif; }
+  body { background: transparent; overflow: hidden; }
+
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 2px 14px; }
+  .fpill { border: 1px solid var(--border); background: var(--surface);
+           color: var(--muted); border-radius: 999px; padding: 6px 16px;
+           font-size: .78rem; font-weight: 600; cursor: pointer;
+           transition: all .25s cubic-bezier(.16,1,.3,1); }
+  .fpill:hover { transform: translateY(-1px); color: var(--text); }
+  .fpill.on { background: linear-gradient(135deg,var(--accent),var(--accent2));
+              color: #fff; border-color: transparent;
+              box-shadow: 0 4px 16px var(--glow); }
+
+  /* ---- modo árbol: columnas flex, espaciado por space-around ---- */
+  #tree { display: flex; gap: 12px; height: calc(100vh - 60px); }
+  .col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .rlabel { text-align: center; font-size: .64rem; font-weight: 700;
+            letter-spacing: .14em; text-transform: uppercase;
+            color: var(--muted); padding-bottom: 6px; }
+  .slots { flex: 1; display: flex; flex-direction: column;
+           justify-content: space-around; gap: 4px; }
+
+  .match { background: var(--surface); border: 1px solid var(--border);
+           border-radius: 12px; padding: 6px 9px;
+           backdrop-filter: blur(20px) saturate(150%);
+           box-shadow: 0 6px 20px var(--shadow);
+           transition: border-color .25s, transform .25s; }
+  .match:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .side { display: flex; align-items: center; gap: 6px; padding: 2px 0;
+          font-size: .72rem; font-weight: 600; color: var(--text);
+          white-space: nowrap; overflow: hidden; }
+  .side img { width: 17px; border-radius: 3px; flex: none; }
+  .side .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .side .pc { font-size: .66rem; font-weight: 700; color: var(--muted); }
+  .side.win, .side.win .pc { color: var(--accent); }
+  .foot { font-size: .56rem; color: var(--muted); margin-top: 2px;
+          letter-spacing: .04em; overflow: hidden; white-space: nowrap;
+          text-overflow: ellipsis; }
+
+  /* ---- modo foco: grid responsiva con cards grandes ---- */
+  #focus { display: none; grid-template-columns:
+           repeat(auto-fill, minmax(250px, 1fr)); gap: 14px;
+           align-content: start; height: calc(100vh - 60px);
+           overflow-y: auto; padding: 2px; }
+  #focus .match { padding: 14px 16px; border-radius: 16px; }
+  #focus .side { font-size: .9rem; padding: 5px 0; }
+  #focus .side img { width: 24px; }
+  #focus .side .pc { font-size: .8rem; }
+  #focus .foot { font-size: .68rem; margin-top: 8px; }
+  #focus .cands { font-size: .64rem; color: var(--muted); margin-top: 4px; }
+
+  .champ { background: linear-gradient(135deg,var(--accent),var(--accent2));
+           border: none; text-align: center; }
+  .champ .side, .champ .pc { color: #fff !important; justify-content: center; }
+  .champ .tag { font-size: .58rem; font-weight: 700; letter-spacing: .16em;
+                color: rgba(255,255,255,.85); text-transform: uppercase; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+</style>
+
+<div class="toolbar" id="bar"></div>
+<div id="tree"></div>
+<div id="focus"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script>
+  const DATA = $DATA;
+  const PD = window.parent.document;
+
+  /* theming: parsear las vars del <style> :root MÁS RECIENTE del padre
+     (getComputedStyle puede devolver valores viejos durante el rerun) */
+  const VARS = ['--bg','--surface','--border','--text','--muted','--accent',
+                '--accent2','--glow','--shadow'];
+  function themeVars() {
+    const styles = [...PD.querySelectorAll('style')];
+    for (let i = styles.length - 1; i >= 0; i--) {
+      const t = styles[i].textContent;
+      if (t.includes(':root') && t.includes('--bg:')) {
+        const out = {};
+        for (const m of t.matchAll(/--([\w-]+)\s*:\s*([^;}]+)/g))
+          out['--' + m[1]] = m[2].trim();
+        return out;
+      }
+    }
+    return null;
+  }
+  function applyTheme() {
+    const vars = themeVars();
+    const cs = getComputedStyle(PD.documentElement);
+    for (const v of VARS)
+      document.documentElement.style.setProperty(
+        v, (vars && vars[v]) || cs.getPropertyValue(v));
+  }
+  applyTheme();
+  /* el <style> de :root vive en el BODY (lo inyecta st.markdown) */
+  let _tPend = false;
+  const applyThemeDebounced = () => {
+    if (_tPend) return;
+    _tPend = true;
+    requestAnimationFrame(() => { _tPend = false; applyTheme(); });
+  };
+  try { new window.parent.MutationObserver(applyThemeDebounced)
+          .observe(PD.body, {childList: true, subtree: true,
+                             characterData: true}); } catch (e) {}
+
+  const esc = s => String(s).replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  function sideHtml(t, win) {
+    if (!t) return '<div class="side"><span class="nm">—</span></div>';
+    const w = win && t.team === win ? ' win' : '';
+    const pc = t.pct >= 99.5 ? '' : `<span class="pc">${Math.round(t.pct)}%</span>`;
+    const img = t.flag ? `<img src="${t.flag}" alt="">` : '';
+    return `<div class="side${w}">${img}<span class="nm">${esc(t.team)}</span>${pc}</div>`;
+  }
+
+  function matchHtml(m, focus) {
+    let extra = '';
+    if (focus && m.cands1 && m.cands1.length > 1) {
+      const alt = a => a.slice(1).map(([t, p]) =>
+        `${esc(t)} ${Math.round(p * 100)}%`).join(' · ');
+      extra = `<div class="cands">Alt: ${alt(m.cands1)} | ${alt(m.cands2)}</div>`;
+    }
+    return `<div class="match">${sideHtml(m.t1, m.win)}${sideHtml(m.t2, m.win)}
+      <div class="foot">${esc(m.date)} · ${esc(m.ground)}</div>${extra}</div>`;
+  }
+
+  /* ---- render árbol completo ---- */
+  const tree = document.getElementById('tree');
+  tree.innerHTML = DATA.rounds.map(r =>
+    `<div class="col"><div class="rlabel">${esc(r.label)}</div>
+     <div class="slots">${r.matches.map(m => matchHtml(m, false)).join('')}
+     </div></div>`).join('') +
+    (DATA.champion ? `<div class="col"><div class="rlabel">Campeón</div>
+     <div class="slots"><div class="match champ"><div class="tag">🏆 Favorito</div>
+     ${sideHtml(DATA.champion, DATA.champion.team)}</div></div></div>` : '');
+
+  /* ---- filtro de fases ---- */
+  const bar = document.getElementById('bar');
+  const focusEl = document.getElementById('focus');
+  const phases = [{key: 'ALL', label: 'Cuadro completo'},
+                  ...DATA.rounds.map(r => ({key: r.key, label: r.label}))];
+
+  function show(key) {
+    bar.querySelectorAll('.fpill').forEach(b =>
+      b.classList.toggle('on', b.dataset.k === key));
+    if (key === 'ALL') {
+      focusEl.style.display = 'none';
+      tree.style.display = 'flex';
+      if (window.gsap) gsap.fromTo('#tree .match',
+        {opacity: 0, scale: .92, y: 10},
+        {opacity: 1, scale: 1, y: 0, duration: .7, stagger: .012,
+         ease: 'elastic.out(1,.65)', clearProps: 'transform'});
+    } else {
+      const r = DATA.rounds.find(x => x.key === key);
+      focusEl.innerHTML = r.matches.map(m => matchHtml(m, true)).join('');
+      tree.style.display = 'none';
+      focusEl.style.display = 'grid';
+      if (window.gsap) gsap.fromTo('#focus .match',
+        {opacity: 0, scale: .85, y: 22},
+        {opacity: 1, scale: 1, y: 0, duration: .8, stagger: .05,
+         ease: 'elastic.out(1,.6)', clearProps: 'transform'});
+    }
+  }
+
+  bar.innerHTML = phases.map(p =>
+    `<button class="fpill" data-k="${p.key}">${esc(p.label)}</button>`).join('');
+  bar.addEventListener('click', e => {
+    const b = e.target.closest('.fpill');
+    if (b) show(b.dataset.k);
+  });
+  show('ALL');
+</script>
