@@ -123,13 +123,25 @@ _adjust_probs) — el engine base sigue siendo bit-a-bit el de entrenamiento.
 - `.streamlit/config.toml` ahora en paleta roja (#ff2d55) para que los
   widgets nativos coincidan con el tema dark.
 
-### PENDIENTE PRÓXIMA SESIÓN (prioridad)
+## Sesión 2026-06-10 — frontend SPA, bracket, RBAC, rosters
 
-- **El usuario reportó "varias fallas" en la UI/app que verá mañana
-  (2026-06-10) — preguntarle cuáles son antes de tocar otra cosa.**
-- Candidatos conocidos: steppers de number_input con fondo oscuro en modo
-  claro; expanders que requieren doble clic a veces; el primer push con
-  credential-helper falló (usar el extraHeader de arriba).
+- `src/frontend/`: effects.html (Lenis+GSAP+Three.js liquid gradient) y
+  bracket.html (componente autocontenido: filtro de fases con GSAP elastic,
+  modo foco con grid). Inyectados vía components.html (iframe same-origin).
+- **Theming de iframes (CLAVE)**: el `<style>` de `:root` que inyecta
+  st.markdown vive en el BODY del padre (no en head) y Streamlit lo muta
+  como characterData. Los componentes parsean las vars del último <style>
+  con `--bg:` y se re-aplican con MutationObserver sobre `PD.body`
+  {childList, subtree, characterData} con debounce rAF. NO usar
+  getComputedStyle solo (devuelve valores viejos en el rerun).
+- Bracket viejo con margin-math eliminado (era el daño principal).
+- RBAC (`mundial/auth.py`): viewer default, admin con clave de
+  `.streamlit/secrets.toml` (gitignored; clave actual local:
+  mundial2026-nico). El tab Ingresar no se construye para viewers.
+- Rosters Gold: `scripts/06_build_rosters.py` → rosters_2026.parquet
+  (825 jugadores desde goalscorers 2022+). Dropdowns anti-typos con "Otro…".
+- XAI dialog: sección pedagógica de Elo con st.latex.
+- 23 tests verdes. Push: usar el extraHeader Basic documentado arriba.
 
 ## Pendiente / ideas
 
