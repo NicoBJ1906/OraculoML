@@ -436,6 +436,11 @@ div[data-testid="stExpanderDetails"] div[data-baseweb="select"] > div
   {min-width: 0;}
 div[data-testid="stExpanderDetails"] div[data-testid="stButton"]
   {margin-top: 0;}
+/* legibilidad de selectboxes en el formulario admin: texto y opciones
+   más grandes (antes quedaban ilegibles en columnas angostas) */
+div[data-baseweb="select"] > div {font-size: .92rem; min-height: 42px;}
+ul[role="listbox"] li {font-size: .92rem; padding-top: 8px !important;
+  padding-bottom: 8px !important;}
 div[data-testid="stSlider"] p {color: var(--muted); font-weight: 500; font-size: .82rem;}
 div[data-testid="stSlider"] div[data-baseweb="slider"] {height: 6px !important;}
 div[data-testid="stSlider"] div[data-baseweb="slider"] > div {
@@ -966,32 +971,38 @@ def dynamic_rows(title: str, key: str, fields: list[tuple]) -> list[dict]:
             rows.pop(i)
             st.rerun()
     nonce = st.session_state.get(f"{key}_nonce", 0)
-    cols = st.columns(widths, vertical_alignment="bottom")
     vals: dict = {}
     equipo_key = f"{key}_{nonce}_Equipo"
-    for kk, (name, kind, opts) in enumerate(fields):
-        wkey = f"{key}_{nonce}_{name}"
-        if kind == "select":
-            vals[name] = cols[kk].selectbox(name, opts, key=wkey)
-        elif kind == "int":
-            vals[name] = cols[kk].number_input(name, 1, 130, 1, key=wkey)
-        elif kind == "player":
-            # dropdown anti-typos: plantilla del equipo elegido en esta fila
-            team_sel = st.session_state.get(equipo_key, opts[0] if opts else "")
-            roster = load_rosters().get(team_sel, [])
-            choices = roster + [OTRO]
-            pick = cols[kk].selectbox(name, choices, key=wkey) \
-                if roster else OTRO
-            if pick == OTRO:
-                pick = cols[kk].text_input(f"{name} (otro)",
-                                           key=f"{wkey}_free",
-                                           placeholder="Nombre")
-            vals[name] = pick
-        else:
-            vals[name] = cols[kk].text_input(name, key=wkey,
-                                             placeholder="Nombre")
-    if cols[-1].button("＋", key=f"{key}_add{nonce}",
-                       help="Agregar fila"):
+    # 2 campos por fila: el formulario vive en media página en desktop y
+    # 4-5 columnas dejaban los selectboxes ilegibles (en móvil sí apilaba)
+    for start in range(0, len(fields), 2):
+        chunk = fields[start:start + 2]
+        cols = st.columns(len(chunk), vertical_alignment="bottom")
+        for kk, (name, kind, opts) in enumerate(chunk):
+            wkey = f"{key}_{nonce}_{name}"
+            if kind == "select":
+                vals[name] = cols[kk].selectbox(name, opts, key=wkey)
+            elif kind == "int":
+                vals[name] = cols[kk].number_input(name, 1, 130, 1, key=wkey)
+            elif kind == "player":
+                # dropdown anti-typos: plantilla del equipo de esta fila
+                team_sel = st.session_state.get(equipo_key,
+                                                opts[0] if opts else "")
+                roster = load_rosters().get(team_sel, [])
+                choices = roster + [OTRO]
+                pick = cols[kk].selectbox(name, choices, key=wkey) \
+                    if roster else OTRO
+                if pick == OTRO:
+                    pick = cols[kk].text_input(f"{name} (otro)",
+                                               key=f"{wkey}_free",
+                                               placeholder="Nombre")
+                vals[name] = pick
+            else:
+                vals[name] = cols[kk].text_input(name, key=wkey,
+                                                 placeholder="Nombre")
+    if st.button("＋ Agregar", key=f"{key}_add{nonce}",
+                 use_container_width=True,
+                 help="Agregar fila"):
         if all(str(vals[n]).strip() and vals[n] != OTRO
                for n, kind, _ in fields if kind in ("text", "player")):
             rows.append(vals)
@@ -1078,6 +1089,25 @@ def save_match(date, home, away, gh, ga, neutral, stage, details,
     st.session_state["form_nonce"] = st.session_state.get("form_nonce", 0) + 1
     for kind in ("ev", "cd", "in"):       # limpia los editores de filas
         st.session_state.pop(f"rows_{kind}_{prefix}", None)
+    flash(f"✅ {home} {int(gh)} – {int(ga)} {away} guardado. "
+          "Predicciones recalculadas.")
+
+
+def flash(msg: str) -> None:
+    """Encola un mensaje que SOBREVIVE al st.rerun() (un st.success seguido
+    de rerun se borra antes de que el usuario lo vea). Añade el estado del
+    sync a GitHub para avisar si el dato quedó solo local."""
+    if STORE.last_sync_ok is False:
+        msg += (" ⚠️ No se pudo publicar en GitHub: el dato quedó solo en "
+                "esta sesión (revisa el token en Secrets).")
+    st.session_state["_flash"] = msg
+
+
+def show_flash() -> None:
+    msg = st.session_state.pop("_flash", None)
+    if msg:
+        (st.warning if "⚠️" in msg else st.success)(msg)
+        st.toast(msg)
 
 
 # ------------------------------------------------ XAI dialog
@@ -1304,6 +1334,7 @@ with tab_pred:
 # ------------------------------------------------ TAB 2: ingresar resultado
 if IS_ADMIN:  # RBAC: el tab solo existe para admin (spec R1)
     with tab_result:
+        show_flash()
         st.markdown(
             '<div class="form-card"><h4>📋 Registro oficial de partidos</h4>'
             '<p style="color:var(--muted);font-size:.82rem;margin:0">Ingresa '
@@ -1346,8 +1377,6 @@ if IS_ADMIN:  # RBAC: el tab solo existe para admin (spec R1)
                              type="primary", use_container_width=True):
                     save_match(row.date, row.home_team, row.away_team, gh, ga,
                                row.neutral, "group", details, prefix="g")
-                    st.success(f"{row.home_team} {gh} – {ga} {row.away_team} "
-                               "guardado. Predicciones recalculadas.")
                     st.rerun()
 
         with col_b, st.container(border=True):
@@ -1379,7 +1408,6 @@ if IS_ADMIN:  # RBAC: el tab solo existe para admin (spec R1)
                     save_match(pd.Timestamp(mdate), mh, ma, mgh, mga,
                                mh not in HOSTS, "ko", mdetails, ko_winner=winner,
                                prefix="m")
-                    st.success("Partido guardado. Predicciones recalculadas.")
                     st.rerun()
 
         if len(live):
@@ -1401,8 +1429,21 @@ if IS_ADMIN:  # RBAC: el tab solo existe para admin (spec R1)
                                                            ascending=False),
                               flags={"Local", "Visitante"}, height=280),
                           unsafe_allow_html=True)
-            if hist.button("🗑️ Borrar el último resultado"):
-                STORE.delete_match(str(live.iloc[-1].match_id))
+            # eliminar CUALQUIER resultado: borra en cascada (goleadores,
+            # tarjetas, lesiones) y el partido sale del estado del modelo
+            # en el siguiente replay — como si nunca se hubiera ingresado
+            dcol1, dcol2 = hist.columns([3, 1], vertical_alignment="bottom")
+            dopts = {
+                f"{pd.Timestamp(r.date).date()} · {r.home_team} "
+                f"{int(r.home_score)}-{int(r.away_score)} {r.away_team}":
+                str(r.match_id)
+                for r in live.sort_values("date").itertuples(index=False)}
+            dpick = dcol1.selectbox("Resultado a eliminar", list(dopts),
+                                    key="del_pick")
+            if dcol2.button("🗑️ Eliminar", use_container_width=True):
+                STORE.delete_match(dopts[dpick])
+                flash(f"🗑️ Eliminado: {dpick}. El partido ya no afecta "
+                      "al modelo.")
                 st.rerun()
 
 # ------------------------------------------------ TAB 3: líderes

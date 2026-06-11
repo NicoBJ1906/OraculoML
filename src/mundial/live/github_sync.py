@@ -50,13 +50,14 @@ def sync_live_files(
     repo: str,
     branch: str = "main",
     repo_prefix: str = "data/live",
-) -> None:
+) -> bool:
     """Sube `files` al repo en un único commit atómico vía Git Trees API.
 
     Archivos que no existen localmente se omiten (nunca borra el remoto).
     Cualquier error de red o API se registra como WARNING sin lanzar
     excepción — el flujo de ingesta nunca debe fallar por indisponibilidad
-    de GitHub.
+    de GitHub. Devuelve True si el commit se publicó (la UI usa el False
+    para avisar que el dato quedó solo local).
 
     Args:
         files:       Rutas locales a subir (normalmente los 4 CSVs de LiveStore).
@@ -68,7 +69,7 @@ def sync_live_files(
     existing = [f for f in files if f.exists()]
     if not existing:
         _LOG.debug("github_sync: ningún archivo existe aún, omitiendo")
-        return
+        return True
 
     base = f"{_API_BASE}/repos/{repo}"
 
@@ -124,6 +125,7 @@ def sync_live_files(
             repo, len(existing), "s" if len(existing) != 1 else "",
             new_commit["sha"][:7],
         )
+        return True
 
     except urllib.error.HTTPError as exc:
         body = exc.read().decode(errors="replace") if exc.fp else ""
@@ -131,7 +133,9 @@ def sync_live_files(
             "github_sync HTTP %s — datos guardados localmente. Detalle: %s",
             exc.code, body[:200],
         )
+        return False
     except Exception as exc:  # noqa: BLE001
         _LOG.warning(
             "github_sync falló — datos guardados localmente. Causa: %s", exc
         )
+        return False

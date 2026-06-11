@@ -39,29 +39,7 @@ MAX_AGE_MONTHS = 18     # una valoración más vieja no cuenta (jugador inactivo
 MIN_PLAYERS = 8         # menos jugadores valorados = selección sin cobertura
 
 # Ciudadanía Transfermarkt -> nombre canónico martj42 (results.csv)
-TM_COUNTRY_ALIASES = {
-    "Cote d'Ivoire": "Ivory Coast",
-    "Korea, South": "South Korea",
-    "Korea, North": "North Korea",
-    "United States": "United States",
-    "Bosnia-Herzegovina": "Bosnia and Herzegovina",
-    "Cape Verde": "Cape Verde",
-    "Curacao": "Curaçao",
-    "DR Congo": "DR Congo",
-    "The Gambia": "Gambia",
-    "Sao Tome and Principe": "São Tomé and Príncipe",
-    "St. Kitts & Nevis": "Saint Kitts and Nevis",
-    "St. Lucia": "Saint Lucia",
-    "Trinidad and Tobago": "Trinidad and Tobago",
-    "Hongkong": "Hong Kong",
-    "Chinese Taipei (Taiwan)": "Taiwan",
-    "Macedonia": "North Macedonia",
-    "Türkiye": "Turkey",
-    "Czech Republic": "Czech Republic",
-    "Ireland": "Republic of Ireland",
-    "Emirates": "United Arab Emirates",
-    "Swaziland": "Eswatini",
-}
+from mundial.transform.names import TM_COUNTRY_ALIASES  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)-7s | %(message)s")
 LOG = logging.getLogger(__name__)

@@ -18,6 +18,27 @@ TEAM_ALIASES: dict[str, str] = {
     # extensible: añadir aquí cualquier mismatch futuro
 }
 
+# Nombres de país de Transfermarkt (citizenship) -> canónico martj42.
+# Usado por scripts 06 (rosters) y 07 (valores de plantilla).
+TM_COUNTRY_ALIASES: dict[str, str] = {
+    "Cote d'Ivoire": "Ivory Coast",
+    "Korea, South": "South Korea",
+    "Korea, North": "North Korea",
+    "Bosnia-Herzegovina": "Bosnia and Herzegovina",
+    "Curacao": "Curaçao",
+    "The Gambia": "Gambia",
+    "Sao Tome and Principe": "São Tomé and Príncipe",
+    "St. Kitts & Nevis": "Saint Kitts and Nevis",
+    "St. Lucia": "Saint Lucia",
+    "Hongkong": "Hong Kong",
+    "Chinese Taipei (Taiwan)": "Taiwan",
+    "Macedonia": "North Macedonia",
+    "Türkiye": "Turkey",
+    "Ireland": "Republic of Ireland",
+    "Emirates": "United Arab Emirates",
+    "Swaziland": "Eswatini",
+}
+
 
 def clean_text(s: pd.Series) -> pd.Series:
     """Trim, colapsa espacios internos y normaliza unicode (NFC). Mantiene acentos."""

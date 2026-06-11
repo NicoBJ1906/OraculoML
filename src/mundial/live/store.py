@@ -77,12 +77,15 @@ class LiveStore:
         self._github_token = github_token
         self._github_repo = github_repo
         self._github_branch = github_branch
+        # estado del último sync (None = sin token / sin intentar): la UI
+        # lo usa para avisar cuando el dato quedó solo local
+        self.last_sync_ok: bool | None = None
 
     def _sync(self) -> None:
         """Sincroniza los 4 CSVs a GitHub si hay token configurado."""
         if not self._github_token:
             return
-        sync_live_files(
+        self.last_sync_ok = sync_live_files(
             [self.f_results, self.f_players, self.f_cards, self.f_injuries],
             token=self._github_token,
             repo=self._github_repo,
