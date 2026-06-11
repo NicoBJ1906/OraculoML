@@ -846,29 +846,45 @@ def backtest_last(team: str, n: int = 5) -> pd.DataFrame:
            & f.home_score.notna()]
          .dropna(subset=FEATURES)
          .sort_values("date").tail(n))
-    if f.empty:
-        return pd.DataFrame()
-    p_clf = art["clf"].predict_proba(f[FEATURES])        # columnas A, D, H
-    lh = art["pois_home"].predict(f[POISSON_FEATURES])
-    la = art["pois_away"].predict(f[POISSON_FEATURES])
     rows = []
-    for k, (_, r) in enumerate(f.iterrows()):
-        pp = outcome_probs(score_matrix(float(lh[k]), float(la[k]),
-                                        art["rho"]))
-        p = (art["blend"] * p_clf[k]
-             + (1 - art["blend"]) * np.array([pp["A"], pp["D"], pp["H"]]))
-        pa, pd_, ph = float(p[0]), float(p[1]), float(p[2])
-        pred = max((("H", ph), ("D", pd_), ("A", pa)), key=lambda x: x[1])[0]
-        real = ("H" if r.home_score > r.away_score
-                else "A" if r.away_score > r.home_score else "D")
-        es_local = r.home_team == team
-        rows.append({"date": pd.Timestamp(r.date),
-                     "rival": r.away_team if es_local else r.home_team,
-                     "es_local": es_local,
-                     "p_win": ph if es_local else pa, "p_draw": pd_,
-                     "score": f"{int(r.home_score)} – {int(r.away_score)}",
-                     "pred": pred, "real": real, "ok": pred == real})
-    return pd.DataFrame(rows).sort_values("date", ascending=False)
+    if not f.empty:
+        p_clf = art["clf"].predict_proba(f[FEATURES])    # columnas A, D, H
+        lh = art["pois_home"].predict(f[POISSON_FEATURES])
+        la = art["pois_away"].predict(f[POISSON_FEATURES])
+        for k, (_, r) in enumerate(f.iterrows()):
+            pp = outcome_probs(score_matrix(float(lh[k]), float(la[k]),
+                                            art["rho"]))
+            p = (art["blend"] * p_clf[k]
+                 + (1 - art["blend"]) * np.array([pp["A"], pp["D"], pp["H"]]))
+            pa, pd_, ph = float(p[0]), float(p[1]), float(p[2])
+            rows.append(_audit_row(team, r.date, r.home_team, r.away_team,
+                                   int(r.home_score), int(r.away_score),
+                                   ph, pd_, pa))
+    # partidos del torneo ingresados en vivo: la predicción honesta
+    # PRE-partido que el LiveEngine registró durante el replay
+    for m in engine.live_audit:
+        if team in (m["home_team"], m["away_team"]):
+            rows.append(_audit_row(team, m["date"], m["home_team"],
+                                   m["away_team"], m["home_score"],
+                                   m["away_score"], m["p_home"],
+                                   m["p_draw"], m["p_away"], live=True))
+    if not rows:
+        return pd.DataFrame()
+    return (pd.DataFrame(rows).sort_values("date")
+            .tail(n).sort_values("date", ascending=False))
+
+
+def _audit_row(team, date, home, away, hs, as_, ph, pd_, pa,
+               live: bool = False) -> dict:
+    pred = max((("H", ph), ("D", pd_), ("A", pa)), key=lambda x: x[1])[0]
+    real = "H" if hs > as_ else ("A" if as_ > hs else "D")
+    es_local = home == team
+    return {"date": pd.Timestamp(date),
+            "rival": away if es_local else home,
+            "es_local": es_local,
+            "p_win": ph if es_local else pa, "p_draw": pd_,
+            "score": f"{hs} – {as_}",
+            "pred": pred, "real": real, "ok": pred == real, "live": live}
 
 
 @st.cache_data
@@ -1691,11 +1707,12 @@ with tab_tablas:
 # ------------------------------------------------ TAB 8: auditoría de modelos
 with tab_audit:
     st.subheader("Auditoría de modelos — backtesting")
-    st.caption("Predicción PRE-partido reconstruida desde la capa Gold "
-               "(features con anti-leakage) con los artefactos entrenados — "
-               "el mismo ensemble de producción: Regresión Logística (0.8) "
-               "+ Poisson Dixon-Coles (0.2, ρ=−0.15). ✓ = el resultado real "
-               "coincidió con el 1X2 más probable del modelo.")
+    st.caption("Predicción PRE-partido reconstruida con anti-leakage y el "
+               "mismo ensemble de producción (Logística + Poisson "
+               "Dixon-Coles, pesos calibrados en validación). Los partidos "
+               "del Mundial ingresados en vivo aparecen marcados 🏆 con la "
+               "predicción exacta que el modelo hizo antes de conocer el "
+               "resultado. ✓ = el real coincidió con el 1X2 más probable.")
     teams_all = sorted(load_teams().name_canonical)
     eq = st.selectbox("Selección a auditar", teams_all,
                       index=teams_all.index("Argentina")
@@ -1712,9 +1729,10 @@ with tab_audit:
         lbl = {"H": "GANA LOCAL", "D": "EMPATE", "A": "GANA VISITA"}
         for r in bt.itertuples(index=False):
             cond = "LOCAL" if r.es_local else "VISITA"
+            mark = " 🏆" if getattr(r, "live", False) else ""
             st.markdown(
                 f'<div class="glass audit-row">'
-                f'<span class="ar-date">{r.date.strftime("%d %b %Y")}'
+                f'<span class="ar-date">{r.date.strftime("%d %b %Y")}{mark}'
                 f'</span>'
                 f'<span class="ar-rival">{flag_img(r.rival, 26)} '
                 f'vs {esc(r.rival)} '

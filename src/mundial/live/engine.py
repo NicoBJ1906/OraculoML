@@ -31,6 +31,9 @@ class LiveEngine(PredictionEngine):
                  weights=None, squad_values=None):
         self.state = TournamentState()
         self.corrector = OnlineCorrector()
+        # auditoría del torneo: predicción honesta PRE-partido de cada
+        # resultado live (la misma que alimenta al corrector) vs lo real
+        self.live_audit: list[dict] = []
         self._live_ready = False          # hooks apagados durante el replay
         super().__init__(matches, clf, pois_home, pois_away, rho, blend,
                          xgb=xgb, weights=weights, squad_values=squad_values)
@@ -48,6 +51,13 @@ class LiveEngine(PredictionEngine):
                 r.date, d["lambda_home"], d["lambda_away"],
                 float(d["probs"]["D"]), hs, as_,
                 xg_home=r.xg_home, xg_away=r.xg_away)
+            self.live_audit.append({
+                "date": pd.Timestamp(r.date),
+                "home_team": r.home_team, "away_team": r.away_team,
+                "home_score": hs, "away_score": as_,
+                "p_home": float(d["probs"]["H"]),
+                "p_draw": float(d["probs"]["D"]),
+                "p_away": float(d["probs"]["A"])})
             self.state.record_match(
                 r.date, r.home_team, r.away_team, hs, as_, neutral,
                 self.elo.get(r.home_team, BASE),
