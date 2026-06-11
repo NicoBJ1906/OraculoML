@@ -19,7 +19,11 @@ jobs:
           cache: pip
 
       - name: Instalar dependencias
-        run: pip install -r requirements.txt ruff bandit pip-audit pytest
+        # pip se actualiza primero: pip-audit también audita al propio pip
+        # del runner (p. ej. PYSEC-2026-196 en pip 26.1.1).
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt ruff bandit pip-audit pytest
 
       - name: Lint (ruff)
         run: ruff check app.py src/ scripts/ tests/
