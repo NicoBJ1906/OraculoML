@@ -19,6 +19,13 @@ import numpy as np
 import pandas as pd
 
 ROUNDS = ["R32", "R16", "QF", "SF", "F", "CAMPEON"]
+
+# Incertidumbre de la fuerza latente (puntos Elo). El rating es una
+# estimación, no una verdad: simular con Elo exacto compone la ventaja del
+# favorito en 7 rondas y concentra P(campeón) de forma irreal. Cada bloque
+# de simulaciones perturba el Elo con ~N(0, ELO_SIGMA) — rango típico de la
+# desviación de rating (RD) de Glicko para selecciones.
+ELO_SIGMA = 75.0
 ROUND_OF = {"Round of 32": "R32", "Round of 16": "R16",
             "Quarter-final": "QF", "Semi-final": "SF", "Final": "F"}
 
@@ -122,16 +129,20 @@ class TournamentSimulator:
                         self.ko_actual[
                             frozenset((r.home_team, r.away_team))] = w
 
-        # distribución de cada fixture de grupos (cacheada una sola vez)
-        self._cum: dict[tuple, np.ndarray] = {}
         self._size = 0
+        self._build_distributions()
+
+    def _build_distributions(self) -> None:
+        """Cachea las distribuciones de grupos y los pares de KO con el Elo
+        ACTUAL del engine (run() la reinvoca por bloque al perturbar Elo)."""
+        self._cum: dict[tuple, np.ndarray] = {}
         for r in self.fixtures.itertuples(index=False):
             key = (r.home_team, r.away_team)
             if key in self.actual:
                 continue
-            d = engine.match_distribution(r.date, r.home_team, r.away_team,
-                                          bool(r.neutral),
-                                          city=getattr(r, "city", None))
+            d = self.engine.match_distribution(r.date, r.home_team,
+                                               r.away_team, bool(r.neutral),
+                                               city=getattr(r, "city", None))
             self._size = d["matrix"].shape[0]
             self._cum[key] = d["matrix"].ravel().cumsum()
 
@@ -144,6 +155,7 @@ class TournamentSimulator:
         from mundial.models.poisson import (
             POISSON_FEATURES, outcome_probs, score_matrix,
         )
+        from mundial.predict.engine import tiebreak_prob
 
         teams = [t for ts in self.groups.values() for t in ts]
         hosts = set(HOST_OF_COUNTRY.values())
@@ -168,8 +180,8 @@ class TournamentSimulator:
             pp = outcome_probs(score_matrix(lh[k], la[k], self.engine.rho))
             p = (self.engine.blend * p_clf[k]
                  + (1 - self.engine.blend) * np.array([pp["A"], pp["D"], pp["H"]]))
-            tb = 1.0 / (1.0 + 10 ** ((self.engine.elo_for(a, date)
-                                      - self.engine.elo_for(h, date)) / 400.0))
+            tb = tiebreak_prob(self.engine.elo_for(h, date),
+                               self.engine.elo_for(a, date))
             self._p_adv[keys[k]] = float(p[2] + p[1] * tb)
 
     # ------------------------------------------------ helpers
@@ -221,7 +233,11 @@ class TournamentSimulator:
             pos[code] = pick[5]
 
     # ------------------------------------------------ simulación
-    def run(self, n_sims: int = 3000, seed: int | None = None) -> pd.DataFrame:
+    def run(self, n_sims: int = 3000, seed: int | None = None,
+            elo_sigma: float = ELO_SIGMA, block: int = 250) -> pd.DataFrame:
+        """Simula n_sims torneos. Con elo_sigma > 0 la fuerza de cada
+        selección se perturba ~N(0, sigma) por bloque de simulaciones
+        (incertidumbre del rating); con 0 usa el Elo exacto del engine."""
         rng = np.random.default_rng(seed)
         teams = [t for ts in self.groups.values() for t in ts]
         reach = {t: defaultdict(int) for t in teams}
@@ -237,7 +253,51 @@ class TournamentSimulator:
 
         group_keys = list(zip(self.fixtures.home_team, self.fixtures.away_team))
 
-        for _ in range(n_sims):
+        base_elo = dict(self.engine.elo)
+        wc_teams = set(teams)
+        noise: dict[str, float] = {}
+        try:
+            for b, done in enumerate(
+                    range(0, n_sims, block if elo_sigma else n_sims)):
+                n_block = min(block, n_sims - done) if elo_sigma else n_sims
+                if elo_sigma:
+                    # antitético: el bloque impar niega el ruido del par —
+                    # la media del boost por equipo es exactamente 0 y la
+                    # suerte de pocos sorteos no reordena el ranking
+                    if b % 2 == 0:
+                        noise = {t: float(rng.normal(0.0, elo_sigma))
+                                 for t in wc_teams}
+                    else:
+                        noise = {t: -v for t, v in noise.items()}
+                    self.engine.elo = {t: e + noise.get(t, 0.0)
+                                       for t, e in base_elo.items()}
+                    self._build_distributions()
+                self._run_block(n_block, rng, group_keys, third_slots,
+                                reach, slot_stats)
+        finally:
+            if elo_sigma:
+                self.engine.elo = base_elo
+                self._build_distributions()   # estado consistente post-run
+
+        # top-3 candidatos por slot con su frecuencia (serializable)
+        self.slot_stats = {
+            k: {side: [(t, c / n_sims) for t, c in cnt.most_common(3)]
+                for side, cnt in ss.items()}
+            for k, ss in slot_stats.items()}
+
+        rows = []
+        g_of = {t: g for g, ts in self.groups.items() for t in ts}
+        for t in teams:
+            rows.append({"team": t, "group": g_of[t],
+                         **{r: reach[t][r] / n_sims for r in ROUNDS}})
+        df = pd.DataFrame(rows).sort_values("CAMPEON", ascending=False)
+        return df.reset_index(drop=True)
+
+    def _run_block(self, n_block: int, rng, group_keys, third_slots,
+                   reach, slot_stats) -> None:
+        """n_block torneos con las distribuciones cacheadas actuales,
+        acumulando en reach/slot_stats."""
+        for _ in range(n_block):
             results = {k: self._sample_score(k, rng) for k in group_keys}
             pos, thirds = self._standings(results, rng)
             self._assign_thirds(third_slots, thirds, pos)
@@ -265,17 +325,3 @@ class TournamentSimulator:
                     winners[f"W{num}"] = w
                 if rnd == "F":
                     reach[w]["CAMPEON"] += 1
-
-        # top-3 candidatos por slot con su frecuencia (serializable)
-        self.slot_stats = {
-            k: {side: [(t, c / n_sims) for t, c in cnt.most_common(3)]
-                for side, cnt in ss.items()}
-            for k, ss in slot_stats.items()}
-
-        rows = []
-        g_of = {t: g for g, ts in self.groups.items() for t in ts}
-        for t in teams:
-            rows.append({"team": t, "group": g_of[t],
-                         **{r: reach[t][r] / n_sims for r in ROUNDS}})
-        df = pd.DataFrame(rows).sort_values("CAMPEON", ascending=False)
-        return df.reset_index(drop=True)

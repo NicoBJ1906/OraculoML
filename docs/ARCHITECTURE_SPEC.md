@@ -67,13 +67,20 @@ rellenan con NA); escritura siempre con el esquema completo.
 ### 2.3 Modelo: `models/artifacts.joblib`
 
 dict con claves: `clf` (LogisticRegression calibrada, clases `['A','D','H']`),
-`pois_home`/`pois_away` (pipelines Poisson), `rho` (Dixon-Coles, -0.15),
-`blend` (peso del clasificador, 0.8), `n_train`, `trained_until`.
+`pois_home`/`pois_away` (pipelines Poisson), `rho` (Dixon-Coles, -0.175),
+`blend` (peso del clasificador, 0.9), `n_train`, `trained_until`.
 
 **Invariante F1**: `PredictionEngine.features_for` replica EXACTAMENTE las
 features batch de `features/build.py`. Si cambias una, cambia ambos lados y
-reentrena. **Invariante F2**: Elo base con K=30 plano (igual que en
-entrenamiento); la capa live NUNCA modifica `engine.elo`.
+reentrena. **Invariante F2**: Elo base con K ponderado por torneo
+(`elo.k_for`: Mundial 60, continentales 50, eliminatorias/Nations League 40,
+amistosos 20, menores 30 — estándar World Football Elo); el replay del engine
+usa el MISMO `k_for` que el entrenamiento, y la capa live aplica los partidos
+del torneo con `tournament="FIFA World Cup"` (K=60). La capa live NUNCA
+modifica `engine.elo` (el ruido `elo_sigma` del MC lo restaura con
+`try/finally`). **Invariante F3**: `rest_days` se capa a 30
+(`build.REST_DAYS_CAP`) en build Y en `features_for` — el histórico tiene gaps
+de meses pero en torneo son 4-7 días (fuera de distribución sin el cap).
 
 ## 3. Flujo de State Updating + Online Learning
 
@@ -87,7 +94,7 @@ Ingesta UI ──► LiveStore (data/live/*.csv)
                a. match_distribution() con hooks APAGADOS  ──► OnlineCorrector.add_record
                   (predicción honesta pre-partido, sin leakage)
                b. TournamentState.record_match (momentum, con xG si existe)
-               c. apply_result (Elo K=30 / forma / H2H base)
+               c. apply_result (Elo K=60 Mundial / forma / H2H base)
           3. TournamentState.load_context(tarjetas, lesiones)
           4. OnlineCorrector.fit()  ──► hooks ENCENDIDOS
                   │
@@ -130,8 +137,18 @@ intacto). **Invariante O2**: la capa live JAMÁS llama `model.fit()`.
   real si está en live). Desempate FIFA: **Pts → DG → GF → head-to-head entre
   empatados (Pts/DG/GF del mini-grupo) → azar** (`rank_group`, función pura).
 - Terceros: los 8 mejores por Pts → DG → GF (sin H2H entre grupos, regla FIFA).
-- Eliminatorias: bracket oficial de openfootball; prórroga/penales por Elo;
-  los cruces ya jugados (en live, con `ko_winner` si hubo penales) se respetan.
+- Eliminatorias: bracket oficial de openfootball; prórroga/penales con
+  `tiebreak_prob` (logística Elo COMPRIMIDA hacia 0.5 con `TIEBREAK_DAMP=0.25`
+  — los penales reales son ~50/50; la logística pura le daba 78% al favorito
+  y concentraba P(campeón)); los cruces ya jugados (en live, con `ko_winner`
+  si hubo penales) se respetan.
+- **Incertidumbre de fuerza (M4)**: `run(elo_sigma=75)` perturba el Elo de los
+  48 clasificados ~N(0, σ) por bloque de 250 sims con ruido ANTITÉTICO (el
+  bloque impar niega el del par → media exacta 0 por equipo). El rating es una
+  estimación, no una verdad: sin esto la ventaja del favorito se compone en
+  7 rondas (Argentina llegaba a 24% de P(campeón) vs ~9% del mercado).
+  `elo_sigma=0` reproduce el comportamiento determinista (tests).
+  `engine.elo` SIEMPRE queda restaurado tras `run()` (try/finally).
 - `slot_stats`: top-3 candidatos por lado de cada llave + ganador (alimenta la
   pestaña Cuadro).
 

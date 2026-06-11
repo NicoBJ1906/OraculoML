@@ -13,13 +13,25 @@ from collections import defaultdict, deque
 import numpy as np
 import pandas as pd
 
-from mundial.features.elo import BASE, HFA, K, _g_multiplier
+from mundial.features.build import REST_DAYS_CAP
+from mundial.features.elo import BASE, HFA, _g_multiplier, k_for
 from mundial.models.baseline import FEATURES
 from mundial.models.poisson import (
     POISSON_FEATURES, outcome_probs, score_matrix, top_scorelines,
 )
 
 FORM_WINDOW = 5
+
+# Compresión del tiebreak (prórroga + penales): los penales son casi una
+# moneda — la logística Elo pura le daba al favorito hasta 78% y eso
+# concentraba P(campeón) de forma irreal en el Monte Carlo.
+TIEBREAK_DAMP = 0.25
+
+
+def tiebreak_prob(elo_h: float, elo_a: float) -> float:
+    """P(local gana prórroga/penales): logística Elo comprimida hacia 0.5."""
+    p = 1.0 / (1.0 + 10 ** ((elo_a - elo_h) / 400.0))
+    return 0.5 + (p - 0.5) * TIEBREAK_DAMP
 
 
 def _pair(a: str, b: str) -> tuple[str, str]:
@@ -48,11 +60,13 @@ class PredictionEngine:
         for row in m.itertuples(index=False):
             self.apply_result(row.date, row.home_team, row.away_team,
                               int(row.home_score), int(row.away_score),
-                              bool(row.neutral))
+                              bool(row.neutral),
+                              tournament=getattr(row, "tournament", None))
 
     # ------------------------------------------------ estado
     def apply_result(self, date, home: str, away: str,
-                     hs: int, as_: int, neutral: bool = True) -> None:
+                     hs: int, as_: int, neutral: bool = True,
+                     tournament: str | None = None) -> None:
         """Actualiza Elo, forma, H2H y fechas con un partido jugado."""
         date = pd.Timestamp(date)
         rh = self.elo.get(home, BASE)
@@ -60,7 +74,7 @@ class PredictionEngine:
         adv = 0.0 if neutral else HFA
         exp_h = 1.0 / (1.0 + 10 ** ((ra - rh - adv) / 400.0))
         s_h = 1.0 if hs > as_ else (0.5 if hs == as_ else 0.0)
-        delta = K * _g_multiplier(hs - as_) * (s_h - exp_h)
+        delta = k_for(tournament) * _g_multiplier(hs - as_) * (s_h - exp_h)
         self.elo[home] = rh + delta
         self.elo[away] = ra - delta
 
@@ -116,8 +130,10 @@ class PredictionEngine:
         x, y = _pair(home, away)
         c = self.h2h.get((x, y), [0, 0, 0])
         h2h_h, h2h_d, h2h_a = (c[0], c[1], c[2]) if home == x else (c[2], c[1], c[0])
-        rest_h = (date - self.last_date[home]).days if home in self.last_date else np.nan
-        rest_a = (date - self.last_date[away]).days if away in self.last_date else np.nan
+        rest_h = (min((date - self.last_date[home]).days, REST_DAYS_CAP)
+                  if home in self.last_date else np.nan)
+        rest_a = (min((date - self.last_date[away]).days, REST_DAYS_CAP)
+                  if away in self.last_date else np.nan)
 
         row = {
             "elo_home_pre": eh, "elo_away_pre": ea, "elo_diff": eh - ea,
@@ -167,9 +183,9 @@ class PredictionEngine:
                 matrix[region] *= probs[lbl] / mass
         matrix /= matrix.sum()
 
-        # P(ganar prórroga/penales) si hay empate en 90' ~ Elo
-        p_tiebreak = 1.0 / (1.0 + 10 ** ((self.elo_for(away, date)
-                                          - self.elo_for(home, date)) / 400.0))
+        # P(ganar prórroga/penales) si hay empate en 90' ~ Elo comprimido
+        p_tiebreak = tiebreak_prob(self.elo_for(home, date),
+                                   self.elo_for(away, date))
         return {"probs": probs, "matrix": matrix, "lambda_home": lh,
                 "lambda_away": la, "p_home_tiebreak": p_tiebreak,
                 "tri": (tri_h, tri_d, tri_a)}

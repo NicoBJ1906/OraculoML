@@ -65,7 +65,7 @@ class LiveStore:
         root: Path,
         *,
         github_token: str | None = None,
-        github_repo: str = "NicoBJ1906/mundial-2026-ml",
+        github_repo: str = "NicoBJ1906/OraculoML",
         github_branch: str = "main",
     ):
         self.dir = Path(root) / "data" / "live"

@@ -61,7 +61,7 @@ def sync_live_files(
     Args:
         files:       Rutas locales a subir (normalmente los 4 CSVs de LiveStore).
         token:       GitHub PAT con permiso ``contents:write`` en el repo.
-        repo:        ``"owner/repo"`` (ej. ``"NicoBJ1906/mundial-2026-ml"``).
+        repo:        ``"owner/repo"`` (ej. ``"NicoBJ1906/OraculoML"``).
         branch:      Rama destino (normalmente ``"main"``).
         repo_prefix: Ruta dentro del repo donde viven los archivos.
     """

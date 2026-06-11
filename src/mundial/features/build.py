@@ -13,6 +13,7 @@ import pandas as pd
 from mundial.features.elo import compute_elo
 
 FORM_FEATURES = ["form_pts", "form_gf", "form_ga", "rest_days", "matches_prior"]
+REST_DAYS_CAP = 30
 
 
 def _long_format(matches: pd.DataFrame) -> pd.DataFrame:
@@ -41,7 +42,9 @@ def _rolling_form(lf: pd.DataFrame, window: int = 5) -> pd.DataFrame:
         lambda s: s.shift(1).rolling(window, min_periods=1).mean())
     lf["form_ga"] = grp["ga"].transform(
         lambda s: s.shift(1).rolling(window, min_periods=1).mean())
-    lf["rest_days"] = grp["date"].diff().dt.days
+    # capado a 30: en selecciones el gap típico son meses, pero en un torneo
+    # son 4-7 días — sin cap el modelo vería valores fuera de distribución
+    lf["rest_days"] = grp["date"].diff().dt.days.clip(upper=REST_DAYS_CAP)
     lf["matches_prior"] = grp.cumcount()
     return lf
 

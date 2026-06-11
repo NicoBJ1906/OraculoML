@@ -52,7 +52,7 @@ class LiveEngine(PredictionEngine):
                 self.elo.get(r.away_team, BASE),
                 xg_home=r.xg_home, xg_away=r.xg_away)
             self.apply_result(r.date, r.home_team, r.away_team,
-                              hs, as_, neutral)
+                              hs, as_, neutral, tournament="FIFA World Cup")
 
         self.state.load_context(store.discipline(), store.injuries())
         self.corrector.fit()

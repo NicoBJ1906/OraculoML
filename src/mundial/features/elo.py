@@ -10,7 +10,29 @@ import pandas as pd
 
 BASE = 1500.0   # rating inicial de una selección nueva
 HFA = 65.0      # ventaja de local en puntos Elo
-K = 30.0        # factor de actualización
+K = 30.0        # factor por defecto (torneos menores / sin info de torneo)
+
+# K ponderado por importancia del partido (estándar World Football Elo):
+# un amistoso no puede mover el rating igual que una semifinal de Mundial.
+_K_CONTINENTAL = ("Copa América", "UEFA Euro", "AFC Asian Cup",
+                  "African Cup of Nations", "Gold Cup",
+                  "CONCACAF Championship")
+
+
+def k_for(tournament: str | None) -> float:
+    """Factor K según el torneo del partido."""
+    if not tournament or not isinstance(tournament, str):
+        return K
+    if tournament == "FIFA World Cup":
+        return 60.0
+    if "qualification" in tournament or "Nations League" in tournament \
+            or "Confederations Cup" in tournament:
+        return 40.0
+    if tournament in _K_CONTINENTAL:
+        return 50.0
+    if tournament == "Friendly":
+        return 20.0
+    return K
 
 
 def _g_multiplier(goal_diff: int) -> float:
@@ -31,6 +53,10 @@ def compute_elo(matches: pd.DataFrame) -> pd.DataFrame:
     hs = df["home_score"].to_numpy()
     as_ = df["away_score"].to_numpy()
     neutral = df["neutral"].to_numpy()
+    if "tournament" in df.columns:
+        ks = np.array([k_for(t) for t in df["tournament"]])
+    else:
+        ks = np.full(len(df), K)
     n = len(df)
     home_pre = np.empty(n)
     away_pre = np.empty(n)
@@ -51,7 +77,7 @@ def compute_elo(matches: pd.DataFrame) -> pd.DataFrame:
             s_h = 0.5
         else:
             s_h = 0.0
-        delta = K * _g_multiplier(int(hs[i] - as_[i])) * (s_h - exp_h)
+        delta = ks[i] * _g_multiplier(int(hs[i] - as_[i])) * (s_h - exp_h)
         ratings[h] = rh + delta
         ratings[a] = ra - delta
 
