@@ -693,7 +693,9 @@ def load_ko_raw() -> list[dict]:
     return [m for m in wc["matches"] if "group" not in m]
 
 
-@st.cache_resource(max_entries=2)
+@st.cache_resource(max_entries=2,
+                   show_spinner="⚙️ Recalculando el modelo con el nuevo "
+                                "resultado (replay histórico + torneo)…")
 def build_engine(live_tok: str) -> LiveEngine:
     """Histórico + live + estado del torneo + corrección online. Se invalida
     cuando cambia cualquier archivo de data/live/ (live_tok)."""
@@ -712,7 +714,8 @@ def build_engine(live_tok: str) -> LiveEngine:
     return eng
 
 
-@st.cache_data
+@st.cache_data(show_spinner="🎲 Simulando el torneo completo (Monte Carlo "
+                            "con incertidumbre de fuerza)…")
 def run_simulation(live_tok: str, n_sims: int) -> tuple[pd.DataFrame, dict]:
     """Monte Carlo del torneo completo; se invalida al ingresar resultados."""
     eng = build_engine(live_tok)
