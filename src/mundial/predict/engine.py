@@ -213,11 +213,12 @@ class PredictionEngine:
         marcadores reescalada para ser coherente con esas probabilidades.
         Es la base de predict_match y de la simulación Monte Carlo."""
         X = self.features_for(date, home, away, neutral)
-        p_clf = self.clf.predict_proba(X[FEATURES])[0]          # orden A, D, H
-        p_xgb = (self.xgb.predict_proba(X[FEATURES])[0]
-                 if self.xgb_active else None)
-        lh = float(self.pois_home.predict(X[POISSON_FEATURES])[0])
-        la = float(self.pois_away.predict(X[POISSON_FEATURES])[0])
+        Xc = X.reindex(columns=FEATURES)    # col faltante -> NaN al imputer
+        p_clf = self.clf.predict_proba(Xc)[0]                   # orden A, D, H
+        p_xgb = self.xgb.predict_proba(Xc)[0] if self.xgb_active else None
+        Xp = X.reindex(columns=POISSON_FEATURES)
+        lh = float(self.pois_home.predict(Xp)[0])
+        la = float(self.pois_away.predict(Xp)[0])
         lh, la = self._adjust_lambdas(date, home, away, lh, la, city)
         matrix = score_matrix(lh, la, self.rho)
         pp = outcome_probs(matrix)

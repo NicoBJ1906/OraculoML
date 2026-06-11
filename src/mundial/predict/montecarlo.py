@@ -170,12 +170,16 @@ class TournamentSimulator:
                     rows.append(self.engine.features_for(date, h, a,
                                                          neutral=False))
                     keys.append((h, a, False))
+        # reindex (no []): si falta una columna entra como NaN al imputer
+        # en vez de reventar (visto en Cloud con módulos hot-reloaded)
         X = pd.concat(rows, ignore_index=True)
-        p_clf = self.engine.clf.predict_proba(X[FEATURES])      # A, D, H
-        p_xgb = (self.engine.xgb.predict_proba(X[FEATURES])
+        Xc = X.reindex(columns=FEATURES)
+        p_clf = self.engine.clf.predict_proba(Xc)               # A, D, H
+        p_xgb = (self.engine.xgb.predict_proba(Xc)
                  if self.engine.xgb_active else None)
-        lh = self.engine.pois_home.predict(X[POISSON_FEATURES])
-        la = self.engine.pois_away.predict(X[POISSON_FEATURES])
+        Xp = X.reindex(columns=POISSON_FEATURES)
+        lh = self.engine.pois_home.predict(Xp)
+        la = self.engine.pois_away.predict(Xp)
 
         self._p_adv: dict[tuple, float] = {}
         for k, (h, a, _) in enumerate(keys):
