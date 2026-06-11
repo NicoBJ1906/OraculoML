@@ -15,6 +15,9 @@ FEATURES = [
     "h2h_home_wins", "h2h_draws", "h2h_away_wins",
     "home_rest_days", "away_rest_days", "diff_rest_days",
     "neutral",
+    # valor de plantilla Transfermarkt (log10 EUR; señal prospectiva que el
+    # Elo retrospectivo no ve — script 07, NaN donde no hay cobertura)
+    "home_log_value", "away_log_value", "diff_log_value",
 ]
 LABELS = ["H", "D", "A"]
 
@@ -41,3 +44,31 @@ def make_rf() -> Pipeline:
             n_estimators=400, max_depth=12, min_samples_leaf=20,
             n_jobs=-1, random_state=42)),
     ])
+
+
+def make_xgb() -> Pipeline:
+    """Gradient boosting conservador (anti-overfit) para no linealidades.
+    XGBoost maneja NaN nativamente — sin imputer, los valores de plantilla
+    faltantes son informativos (selecciones sin cobertura de mercado)."""
+    from xgboost import XGBClassifier
+
+    return Pipeline([
+        ("clf", XGBClassifier(
+            n_estimators=400, learning_rate=0.05, max_depth=4,
+            min_child_weight=20, subsample=0.8, colsample_bytree=0.8,
+            reg_lambda=2.0, objective="multi:softprob",
+            eval_metric="mlogloss", tree_method="hist",
+            n_jobs=-1, random_state=42)),
+    ])
+
+
+def fit_xgb(pipe: Pipeline, X, y) -> Pipeline:
+    """Entrena el XGB con labels 'A'/'D'/'H' codificadas 0/1/2 (orden
+    alfabético = el mismo de LogisticRegression.classes_)."""
+    import pandas as pd
+
+    codes = pd.Categorical(y, categories=LABELS_SORTED).codes
+    return pipe.fit(X, codes)
+
+
+LABELS_SORTED = ["A", "D", "H"]   # orden de clases de sklearn (alfabético)

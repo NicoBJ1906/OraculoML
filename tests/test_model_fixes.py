@@ -101,8 +101,70 @@ def test_rest_days_capado_en_engine():
     eng.elo, eng.form, eng.h2h = {}, {}, {}
     eng.last_date = {"A": pd.Timestamp("2023-01-01")}
     eng.n_matches = {}
+    eng._logval, eng._logval_max = {}, 0
     X = eng.features_for("2024-01-01", "A", "B")
     assert X.home_rest_days.iloc[0] == REST_DAYS_CAP
+
+
+# ---------------------------------------------------------------------------
+# Valor de plantilla (Transfermarkt) y ensemble de 3 modelos
+# ---------------------------------------------------------------------------
+
+def _sv() -> pd.DataFrame:
+    return pd.DataFrame({"team": ["A", "A", "B"], "year": [2024, 2025, 2025],
+                         "log_value": [8.0, 8.5, 7.5]})
+
+
+def test_merge_squad_values_en_build():
+    m = pd.DataFrame({
+        "date": pd.to_datetime(["2025-03-01"]),
+        "home_team": ["A"], "away_team": ["B"],
+        "home_score": [1], "away_score": [0],
+        "neutral": [True], "tournament": ["Friendly"], "year": [2025],
+    })
+    out = build_features(m, squad_values=_sv())
+    assert out.home_log_value.iloc[0] == 8.5
+    assert out.diff_log_value.iloc[0] == pytest.approx(1.0)
+
+
+def test_engine_log_value_con_fallback():
+    from mundial.predict.engine import PredictionEngine
+
+    eng = PredictionEngine.__new__(PredictionEngine)
+    eng._logval = {("A", 2024): 8.0, ("A", 2025): 8.5}
+    eng._logval_max = 2025
+    assert eng._log_value("A", 2025) == 8.5
+    assert eng._log_value("A", 2027) == 8.5    # cap al último snapshot
+    assert eng._log_value("A", 2026) == 8.5    # fallback 1 año atrás
+    assert pd.isna(eng._log_value("B", 2025))  # sin cobertura
+
+
+def test_mix_tres_modelos_y_xgb_inactivo():
+    import numpy as np
+
+    from mundial.predict.engine import PredictionEngine
+
+    eng = PredictionEngine.__new__(PredictionEngine)
+    p1 = np.array([0.2, 0.3, 0.5])
+    p2 = np.array([0.4, 0.3, 0.3])
+    p3 = np.array([0.3, 0.4, 0.3])
+
+    eng.xgb, eng.weights = object(), (0.5, 0.3, 0.2)
+    eng.xgb_active = True
+    out = eng._mix(p1, p2, p3)
+    assert out.sum() == pytest.approx(1.0)
+    assert out[0] == pytest.approx(0.5 * 0.2 + 0.3 * 0.4 + 0.2 * 0.3)
+
+    # peso 0 -> xgb inactivo: renormaliza clf+pois y no necesita p_xgb
+    eng.weights, eng.xgb_active = (0.7, 0.0, 0.3), False
+    out = eng._mix(p1, None, p3)
+    assert out.sum() == pytest.approx(1.0)
+    assert out[2] == pytest.approx((0.7 * 0.5 + 0.3 * 0.3) / 1.0)
+
+    # back-compat: sin weights usa blend
+    eng.weights, eng.blend = None, 0.8
+    out = eng._mix(p1, None, p3)
+    assert out[0] == pytest.approx(0.8 * 0.2 + 0.2 * 0.3)
 
 
 # ---------------------------------------------------------------------------

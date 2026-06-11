@@ -27,11 +27,13 @@ from mundial.predict.engine import PredictionEngine
 class LiveEngine(PredictionEngine):
 
     def __init__(self, matches: pd.DataFrame, clf, pois_home, pois_away,
-                 rho: float, blend: float, store: LiveStore):
+                 rho: float, blend: float, store: LiveStore, xgb=None,
+                 weights=None, squad_values=None):
         self.state = TournamentState()
         self.corrector = OnlineCorrector()
         self._live_ready = False          # hooks apagados durante el replay
-        super().__init__(matches, clf, pois_home, pois_away, rho, blend)
+        super().__init__(matches, clf, pois_home, pois_away, rho, blend,
+                         xgb=xgb, weights=weights, squad_values=squad_values)
 
         live = store.results()
         if len(live):

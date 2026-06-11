@@ -172,14 +172,17 @@ class TournamentSimulator:
                     keys.append((h, a, False))
         X = pd.concat(rows, ignore_index=True)
         p_clf = self.engine.clf.predict_proba(X[FEATURES])      # A, D, H
+        p_xgb = (self.engine.xgb.predict_proba(X[FEATURES])
+                 if self.engine.xgb_active else None)
         lh = self.engine.pois_home.predict(X[POISSON_FEATURES])
         la = self.engine.pois_away.predict(X[POISSON_FEATURES])
 
         self._p_adv: dict[tuple, float] = {}
         for k, (h, a, _) in enumerate(keys):
             pp = outcome_probs(score_matrix(lh[k], la[k], self.engine.rho))
-            p = (self.engine.blend * p_clf[k]
-                 + (1 - self.engine.blend) * np.array([pp["A"], pp["D"], pp["H"]]))
+            p = self.engine._mix(
+                p_clf[k], p_xgb[k] if p_xgb is not None else None,
+                np.array([pp["A"], pp["D"], pp["H"]]))
             tb = tiebreak_prob(self.engine.elo_for(h, date),
                                self.engine.elo_for(a, date))
             self._p_adv[keys[k]] = float(p[2] + p[1] * tb)

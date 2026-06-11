@@ -694,9 +694,13 @@ def build_engine(live_tok: str) -> LiveEngine:
     cuando cambia cualquier archivo de data/live/ (live_tok)."""
     art = load_artifacts()
     matches = pd.read_parquet(ROOT / "data" / "interim" / "matches.parquet")
+    sv_path = ROOT / "data" / "processed" / "squad_values.parquet"
+    squad_values = pd.read_parquet(sv_path) if sv_path.exists() else None
     t0 = time.perf_counter()
     eng = LiveEngine(matches, art["clf"], art["pois_home"],
-                     art["pois_away"], art["rho"], art["blend"], STORE)
+                     art["pois_away"], art["rho"], art["blend"], STORE,
+                     xgb=art.get("xgb"), weights=art.get("weights"),
+                     squad_values=squad_values)
     LOG.info("LiveEngine construido (token=%s) en %.1fs: %s históricos, "
              "%s en vivo", live_tok, time.perf_counter() - t0,
              len(matches), len(STORE.results()))

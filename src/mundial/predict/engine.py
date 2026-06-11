@@ -42,13 +42,33 @@ class PredictionEngine:
     """Estado incremental + predicción con clasificador y Poisson."""
 
     def __init__(self, matches: pd.DataFrame, clf, pois_home, pois_away,
-                 rho: float = 0.0, blend: float = 0.5):
-        """matches: silver matches (histórico completo, ordenado o no)."""
+                 rho: float = 0.0, blend: float = 0.5, xgb=None,
+                 weights: tuple[float, float, float] | None = None,
+                 squad_values: pd.DataFrame | None = None):
+        """matches: silver matches (histórico completo, ordenado o no).
+
+        xgb/weights: tercer modelo del ensemble (w_clf, w_xgb, w_pois);
+        sin ellos se usa el blend de 2 modelos (back-compat).
+        squad_values: tabla (team, year, log_value) del script 07.
+        """
         self.clf = clf
         self.pois_home = pois_home
         self.pois_away = pois_away
         self.rho = rho
-        self.blend = blend  # peso del clasificador en el ensemble
+        self.blend = blend  # peso del clasificador en el ensemble 2-modelos
+        self.xgb = xgb
+        self.weights = tuple(weights) if weights is not None else None
+        # el XGB solo participa si la calibración le dio peso real — con
+        # peso 0 no se paga su inferencia (la arquitectura queda lista)
+        self.xgb_active = (xgb is not None and self.weights is not None
+                           and self.weights[1] > 1e-9)
+
+        self._logval: dict[tuple[str, int], float] = {}
+        self._logval_max = 0
+        if squad_values is not None:
+            for r in squad_values.itertuples(index=False):
+                self._logval[(r.team, int(r.year))] = float(r.log_value)
+            self._logval_max = int(squad_values.year.max())
 
         self.elo: dict[str, float] = {}
         self.form: dict[str, deque] = defaultdict(lambda: deque(maxlen=FORM_WINDOW))
@@ -111,6 +131,29 @@ class PredictionEngine:
         """p en orden ['A','D','H']."""
         return p
 
+    def _log_value(self, team: str, year: int) -> float:
+        """log10 del valor de plantilla (team, año), con fallback al último
+        snapshot disponible <= año (máx. 2 hacia atrás). NaN sin cobertura."""
+        if not self._logval:
+            return np.nan
+        year = min(year, self._logval_max)
+        for y in (year, year - 1, year - 2):
+            v = self._logval.get((team, y))
+            if v is not None:
+                return v
+        return np.nan
+
+    def _mix(self, p_clf: np.ndarray, p_xgb: np.ndarray | None,
+             p_pois: np.ndarray) -> np.ndarray:
+        """Ensemble: 3 modelos con weights, o 2 con blend (back-compat)."""
+        if self.weights is not None:
+            w1, w2, w3 = self.weights
+            out = w1 * p_clf + w3 * p_pois
+            if self.xgb_active:
+                out = out + w2 * p_xgb
+            return out / out.sum(axis=-1, keepdims=True)
+        return self.blend * p_clf + (1 - self.blend) * p_pois
+
     # ------------------------------------------------ features
     def _team_form(self, team: str) -> tuple[float, float, float]:
         f = self.form.get(team)
@@ -147,6 +190,11 @@ class PredictionEngine:
             "diff_rest_days": rest_h - rest_a,
             "neutral": int(neutral),
         }
+        lv_h = self._log_value(home, date.year)
+        lv_a = self._log_value(away, date.year)
+        row["home_log_value"] = lv_h
+        row["away_log_value"] = lv_a
+        row["diff_log_value"] = lv_h - lv_a
         return pd.DataFrame([row])
 
     # ------------------------------------------------ predicción
@@ -158,13 +206,15 @@ class PredictionEngine:
         Es la base de predict_match y de la simulación Monte Carlo."""
         X = self.features_for(date, home, away, neutral)
         p_clf = self.clf.predict_proba(X[FEATURES])[0]          # orden A, D, H
+        p_xgb = (self.xgb.predict_proba(X[FEATURES])[0]
+                 if self.xgb_active else None)
         lh = float(self.pois_home.predict(X[POISSON_FEATURES])[0])
         la = float(self.pois_away.predict(X[POISSON_FEATURES])[0])
         lh, la = self._adjust_lambdas(date, home, away, lh, la, city)
         matrix = score_matrix(lh, la, self.rho)
         pp = outcome_probs(matrix)
         p_pois = np.array([pp["A"], pp["D"], pp["H"]])
-        p = self.blend * p_clf + (1 - self.blend) * p_pois
+        p = self._mix(p_clf, p_xgb, p_pois)
         p = self._adjust_probs(date, p)
 
         order = list(self.clf.classes_)  # ['A','D','H']

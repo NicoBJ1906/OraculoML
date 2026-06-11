@@ -20,6 +20,7 @@ data/interim/*
 data/processed/*
 !data/processed/features.parquet
 !data/processed/rosters_2026.parquet
+!data/processed/squad_values.parquet
 # Datos dinámicos del torneo (estado personal, se crean desde la UI)
 data/live/*
 !data/**/.gitkeep

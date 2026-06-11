@@ -83,7 +83,24 @@ def _h2h(matches: pd.DataFrame) -> pd.DataFrame:
     return matches
 
 
-def build_features(matches: pd.DataFrame) -> pd.DataFrame:
+def _merge_squad_values(out: pd.DataFrame, squad_values: pd.DataFrame) -> pd.DataFrame:
+    """Une el log10 del valor de plantilla Transfermarkt por (team, año del
+    partido). NaN donde no hay cobertura (pre-2005, selecciones chicas) —
+    el imputer del modelo lo absorbe."""
+    sv = squad_values[["team", "year", "log_value"]]
+    yr = out["year"] if "year" in out.columns else out["date"].dt.year
+    out = out.assign(_y=yr)
+    for side in ("home", "away"):
+        out = out.merge(
+            sv.rename(columns={"team": f"{side}_team", "year": "_y",
+                               "log_value": f"{side}_log_value"}),
+            on=[f"{side}_team", "_y"], how="left")
+    out["diff_log_value"] = out["home_log_value"] - out["away_log_value"]
+    return out.drop(columns="_y")
+
+
+def build_features(matches: pd.DataFrame,
+                   squad_values: pd.DataFrame | None = None) -> pd.DataFrame:
     """Construye la tabla gold de features por partido."""
     m = compute_elo(matches)            # ordena por fecha + elo_*_pre
     m = _h2h(m).reset_index(drop=True)
@@ -96,4 +113,7 @@ def build_features(matches: pd.DataFrame) -> pd.DataFrame:
     out = m.set_index("match_id").join(home).join(away)
     for f in FORM_FEATURES:
         out[f"diff_{f}"] = out[f"home_{f}"] - out[f"away_{f}"]
-    return out.reset_index()
+    out = out.reset_index()
+    if squad_values is not None:
+        out = _merge_squad_values(out, squad_values)
+    return out

@@ -18,6 +18,7 @@ POISSON_FEATURES = [
     "home_form_gf", "home_form_ga",
     "away_form_gf", "away_form_ga",
     "neutral",
+    "diff_log_value",       # valor de plantilla (script 07), NaN -> imputer
 ]
 
 MAX_GOALS = 10  # la matriz cubre 0..MAX_GOALS goles por equipo

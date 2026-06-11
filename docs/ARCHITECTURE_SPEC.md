@@ -67,8 +67,22 @@ rellenan con NA); escritura siempre con el esquema completo.
 ### 2.3 Modelo: `models/artifacts.joblib`
 
 dict con claves: `clf` (LogisticRegression calibrada, clases `['A','D','H']`),
-`pois_home`/`pois_away` (pipelines Poisson), `rho` (Dixon-Coles, -0.175),
-`blend` (peso del clasificador, 0.9), `n_train`, `trained_until`.
+`xgb` (XGBClassifier, mismas clases vía códigos 0/1/2), `pois_home`/`pois_away`
+(pipelines Poisson), `rho` (Dixon-Coles, -0.175), `weights` (ensemble 3
+modelos clf/xgb/pois, calibrado en validación: 0.70/0.00/0.30), `blend`
+(compat 2-modelos), `n_train`, `trained_until`.
+
+**Invariante F4 (valor de plantilla)**: features `home_log_value` /
+`away_log_value` / `diff_log_value` = log10 del valor Transfermarkt de la
+selección por año (script 07: top-26 valoraciones vigentes de sus
+internacionales; fuente salimt/football-datasets). NaN sin cobertura
+(pre-2005, selecciones chicas, Arabia Saudita/Jordania/Uzbekistán) → imputer.
+El engine usa `_log_value(team, año)` con fallback de hasta 2 años.
+**Invariante F5 (peso del XGB)**: el XGBoost solo participa si la calibración
+le da peso > 0 (`engine.xgb_active`); con peso 0 no se paga su inferencia.
+Evidencia 2026-06-10: val log-loss XGB 0.84 vs logística 0.83 — las features
+actuales son monótonas y el boosting no aporta; re-evaluar cuando entren
+features de interacción (fatiga×edad, viaje×descanso).
 
 **Invariante F1**: `PredictionEngine.features_for` replica EXACTAMENTE las
 features batch de `features/build.py`. Si cambias una, cambia ambos lados y

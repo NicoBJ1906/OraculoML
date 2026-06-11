@@ -28,7 +28,13 @@ def main() -> None:
     matches = pd.read_parquet(INTERIM / "matches.parquet")
     log.info("matches cargados: %d", len(matches))
 
-    feats = build_features(matches)
+    sv_path = PROCESSED / "squad_values.parquet"
+    squad_values = pd.read_parquet(sv_path) if sv_path.exists() else None
+    if squad_values is None:
+        log.warning("squad_values.parquet no existe (corre script 07): "
+                    "features de valor de plantilla quedarán fuera")
+
+    feats = build_features(matches, squad_values=squad_values)
     out = PROCESSED / "features.parquet"
     feats.to_parquet(out, index=False)
     log.info("features -> %s  (%d filas, %d cols)", out.name, len(feats), feats.shape[1])
