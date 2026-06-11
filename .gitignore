@@ -45,3 +45,6 @@ Thumbs.db
 .vscode/
 .idea/
 logs/
+
+# Instrucciones del agente (solo local)
+CLAUDE.md
