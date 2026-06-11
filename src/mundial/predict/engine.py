@@ -63,11 +63,14 @@ class PredictionEngine:
         self.xgb_active = (xgb is not None and self.weights is not None
                            and self.weights[1] > 1e-9)
 
-        self._logval: dict[tuple[str, int], float] = {}
+        # (team, año) -> (log_value, edad ponderada, concentración top-3)
+        self._logval: dict[tuple[str, int], tuple] = {}
         self._logval_max = 0
         if squad_values is not None:
             for r in squad_values.itertuples(index=False):
-                self._logval[(r.team, int(r.year))] = float(r.log_value)
+                self._logval[(r.team, int(r.year))] = (
+                    float(r.log_value), float(getattr(r, "age_w", np.nan)),
+                    float(getattr(r, "top3_share", np.nan)))
             self._logval_max = int(squad_values.year.max())
 
         self.elo: dict[str, float] = {}
@@ -131,17 +134,19 @@ class PredictionEngine:
         """p en orden ['A','D','H']."""
         return p
 
-    def _log_value(self, team: str, year: int) -> float:
-        """log10 del valor de plantilla (team, año), con fallback al último
-        snapshot disponible <= año (máx. 2 hacia atrás). NaN sin cobertura."""
+    _NO_SQUAD = (np.nan, np.nan, np.nan)
+
+    def _log_value(self, team: str, year: int) -> tuple:
+        """(log_value, edad_w, top3_share) de la plantilla (team, año), con
+        fallback al último snapshot <= año (máx. 2 atrás). NaN sin cobertura."""
         if not self._logval:
-            return np.nan
+            return self._NO_SQUAD
         year = min(year, self._logval_max)
         for y in (year, year - 1, year - 2):
             v = self._logval.get((team, y))
             if v is not None:
                 return v
-        return np.nan
+        return self._NO_SQUAD
 
     def _mix(self, p_clf: np.ndarray, p_xgb: np.ndarray | None,
              p_pois: np.ndarray) -> np.ndarray:
@@ -190,11 +195,14 @@ class PredictionEngine:
             "diff_rest_days": rest_h - rest_a,
             "neutral": int(neutral),
         }
-        lv_h = self._log_value(home, date.year)
-        lv_a = self._log_value(away, date.year)
+        lv_h, age_h, t3_h = self._log_value(home, date.year)
+        lv_a, age_a, t3_a = self._log_value(away, date.year)
         row["home_log_value"] = lv_h
         row["away_log_value"] = lv_a
         row["diff_log_value"] = lv_h - lv_a
+        row["home_squad_age"] = age_h
+        row["away_squad_age"] = age_a
+        row["diff_top3_share"] = t3_h - t3_a
         return pd.DataFrame([row])
 
     # ------------------------------------------------ predicción

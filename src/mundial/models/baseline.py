@@ -15,9 +15,11 @@ FEATURES = [
     "h2h_home_wins", "h2h_draws", "h2h_away_wins",
     "home_rest_days", "away_rest_days", "diff_rest_days",
     "neutral",
-    # valor de plantilla Transfermarkt (log10 EUR; señal prospectiva que el
-    # Elo retrospectivo no ve — script 07, NaN donde no hay cobertura)
+    # plantilla Transfermarkt (script 07, NaN sin cobertura): valor log10,
+    # edad ponderada por valor (no monótona: terreno del XGB) y
+    # concentración del valor en el top-3 (dependencia de estrellas)
     "home_log_value", "away_log_value", "diff_log_value",
+    "home_squad_age", "away_squad_age", "diff_top3_share",
 ]
 LABELS = ["H", "D", "A"]
 

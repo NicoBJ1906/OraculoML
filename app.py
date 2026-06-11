@@ -877,6 +877,31 @@ def backtest_last(team: str, n: int = 5) -> pd.DataFrame:
             .tail(n).sort_values("date", ascending=False))
 
 
+@st.cache_data
+def calibration_table(n_bins: int = 8) -> pd.DataFrame:
+    """Curva de confiabilidad en test temporal >= 2022: cuando el ensemble
+    dice X% para su 1X2 más probable, ¿acierta X% de las veces?"""
+    from mundial.models.baseline import FEATURES
+    from mundial.models.poisson import POISSON_FEATURES, predict_proba_1x2
+    art = load_artifacts()
+    f = pd.read_parquet(ROOT / "data" / "processed" / "features.parquet")
+    f = f[(f.year >= 2022) & f.home_score.notna()].dropna(subset=FEATURES)
+    p = (art["blend"] * art["clf"].predict_proba(f[FEATURES])
+         + (1 - art["blend"]) * predict_proba_1x2(
+             art["pois_home"], art["pois_away"], f[POISSON_FEATURES],
+             art["rho"]))
+    conf = p.max(axis=1)
+    pred = np.array(["A", "D", "H"])[p.argmax(axis=1)]
+    real = np.where(f.home_score > f.away_score, "H",
+                    np.where(f.home_score < f.away_score, "A", "D"))
+    df = pd.DataFrame({"conf": conf, "ok": pred == real})
+    df["bin"] = pd.cut(df.conf, bins=np.linspace(0.33, 1.0, n_bins + 1))
+    g = df.groupby("bin", observed=True).agg(
+        confianza=("conf", "mean"), acierto=("ok", "mean"),
+        n=("ok", "size"))
+    return g[g.n >= 30].reset_index(drop=True)
+
+
 def _audit_row(team, date, home, away, hs, as_, ph, pd_, pa,
                live: bool = False) -> dict:
     pred = max((("H", ph), ("D", pd_), ("A", pa)), key=lambda x: x[1])[0]
@@ -1753,3 +1778,16 @@ with tab_audit:
                    "1X2 internacional es ~55-60% de acierto; el valor real "
                    "del modelo está en su calibración (cuando dice 80%, "
                    "acierta ~80% de esas veces).")
+
+    with st.expander("📈 Calibración global del modelo (test 2022+)"):
+        cal = calibration_table()
+        st.caption("Cada punto: partidos donde el modelo dio esa confianza "
+                   "a su pronóstico vs cuántos acertó de verdad. La línea "
+                   "'ideal' es calibración perfecta — pegado a ella = las "
+                   "probabilidades significan lo que dicen.")
+        chart = cal.set_index((100 * cal.confianza).round(0).astype(int))
+        chart = pd.DataFrame({
+            "% acierto real": 100 * chart.acierto,
+            "ideal": chart.index.to_series()})
+        st.line_chart(chart, x_label="confianza del modelo (%)",
+                      y_label="acierto real (%)")

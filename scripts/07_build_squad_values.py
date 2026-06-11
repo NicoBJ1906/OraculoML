@@ -41,6 +41,12 @@ MIN_PLAYERS = 8         # menos jugadores valorados = selección sin cobertura
 # Ciudadanía Transfermarkt -> nombre canónico martj42 (results.csv)
 from mundial.transform.names import TM_COUNTRY_ALIASES  # noqa: E402
 
+# Selecciones sin cobertura en la fuente (sus ligas casi no enlazan
+# jugadores a la selección): valor 2026 tomado de Transfermarkt web.
+OVERRIDES_2026_EUR = {
+    "Saudi Arabia": 31e6, "Uzbekistan": 28e6, "Jordan": 15e6,
+}
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)-7s | %(message)s")
 LOG = logging.getLogger(__name__)
 
@@ -63,7 +69,10 @@ def main() -> None:
     perf = pd.read_csv(RAW / "player_national_performances.csv",
                        usecols=["player_id", "team_id"])
     profiles = pd.read_csv(RAW / "player_profiles.csv",
-                           usecols=["player_id", "citizenship"])
+                           usecols=["player_id", "citizenship",
+                                    "date_of_birth"])
+    birth_year = pd.to_datetime(profiles.set_index("player_id")
+                                ["date_of_birth"], errors="coerce").dt.year
     values = pd.read_csv(RAW / "player_market_value.csv",
                          parse_dates=["date_unix"])
     values = values.rename(columns={"date_unix": "date"}).dropna(subset=["value"])
@@ -89,11 +98,27 @@ def main() -> None:
             if len(vals) < MIN_PLAYERS:
                 continue
             top = vals.nlargest(TOP_N)
+            # edad media del top-26 PONDERADA por valor (captura "campeón
+            # envejecido vs plantilla joven") y concentración en el top-3
+            # (dependencia de estrellas — interactúa con lesiones)
+            ages = (year - birth_year.reindex(top.index)).dropna()
+            w = top.reindex(ages.index)
+            age_w = float((ages * w).sum() / w.sum()) if w.sum() else float("nan")
             rows.append({"team": team, "year": year,
                          "squad_value_eur": float(top.sum()),
+                         "age_w": age_w,
+                         "top3_share": float(top.nlargest(3).sum() / top.sum()),
                          "n_players": int(len(vals))})
 
     out = pd.DataFrame(rows)
+    have_2026 = set(out[out.year == 2026].team)
+    extra = [{"team": t, "year": 2026, "squad_value_eur": v,
+              "age_w": float("nan"), "top3_share": float("nan"),
+              "n_players": 0}
+             for t, v in OVERRIDES_2026_EUR.items() if t not in have_2026]
+    if extra:
+        out = pd.concat([out, pd.DataFrame(extra)], ignore_index=True)
+        LOG.info("overrides 2026 añadidos: %s", [e["team"] for e in extra])
     out["log_value"] = np.log10(out["squad_value_eur"].clip(lower=1.0))
     out_path = PROCESSED / "squad_values.parquet"
     out.to_parquet(out_path, index=False)

@@ -131,12 +131,12 @@ def test_engine_log_value_con_fallback():
     from mundial.predict.engine import PredictionEngine
 
     eng = PredictionEngine.__new__(PredictionEngine)
-    eng._logval = {("A", 2024): 8.0, ("A", 2025): 8.5}
+    eng._logval = {("A", 2024): (8.0, 27.0, 0.3), ("A", 2025): (8.5, 26.0, 0.4)}
     eng._logval_max = 2025
-    assert eng._log_value("A", 2025) == 8.5
-    assert eng._log_value("A", 2027) == 8.5    # cap al último snapshot
-    assert eng._log_value("A", 2026) == 8.5    # fallback 1 año atrás
-    assert pd.isna(eng._log_value("B", 2025))  # sin cobertura
+    assert eng._log_value("A", 2025)[0] == 8.5
+    assert eng._log_value("A", 2027)[0] == 8.5    # cap al último snapshot
+    assert eng._log_value("A", 2026)[1] == 26.0   # fallback 1 año atrás
+    assert pd.isna(eng._log_value("B", 2025)[0])  # sin cobertura
 
 
 def test_mix_tres_modelos_y_xgb_inactivo():

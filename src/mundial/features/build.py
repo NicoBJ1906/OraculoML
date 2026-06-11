@@ -87,15 +87,21 @@ def _merge_squad_values(out: pd.DataFrame, squad_values: pd.DataFrame) -> pd.Dat
     """Une el log10 del valor de plantilla Transfermarkt por (team, año del
     partido). NaN donde no hay cobertura (pre-2005, selecciones chicas) —
     el imputer del modelo lo absorbe."""
-    sv = squad_values[["team", "year", "log_value"]]
+    cols = ["log_value"] + [c for c in ("age_w", "top3_share")
+                            if c in squad_values.columns]
+    sv = squad_values[["team", "year", *cols]]
     yr = out["year"] if "year" in out.columns else out["date"].dt.year
     out = out.assign(_y=yr)
+    ren = {"log_value": "log_value", "age_w": "squad_age",
+           "top3_share": "top3_share"}
     for side in ("home", "away"):
         out = out.merge(
             sv.rename(columns={"team": f"{side}_team", "year": "_y",
-                               "log_value": f"{side}_log_value"}),
+                               **{c: f"{side}_{ren[c]}" for c in cols}}),
             on=[f"{side}_team", "_y"], how="left")
     out["diff_log_value"] = out["home_log_value"] - out["away_log_value"]
+    if "age_w" in cols:
+        out["diff_top3_share"] = out["home_top3_share"] - out["away_top3_share"]
     return out.drop(columns="_y")
 
 
