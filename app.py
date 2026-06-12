@@ -725,7 +725,7 @@ def _club_gate() -> None:
         pw = st.text_input("Clave del club", type="password",
                            key="club_pw", label_visibility="collapsed",
                            placeholder="🔮 Clave para ver el futuroooo")
-        if st.button("Entrar al club", type="primary",
+        if st.button("📻 Mami prenda la radio, encienda la tele 📺", type="primary",
                      use_container_width=True):
             if pw == clave:
                 st.session_state["club_ok"] = True
