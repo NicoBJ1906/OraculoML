@@ -18,6 +18,7 @@ from __future__ import annotations
 import pandas as pd
 
 from mundial.features.elo import BASE
+from mundial.models.poisson import top_scorelines
 from mundial.live.online import OnlineCorrector
 from mundial.live.state import TournamentState
 from mundial.live.store import LiveStore
@@ -57,7 +58,8 @@ class LiveEngine(PredictionEngine):
                 "home_score": hs, "away_score": as_,
                 "p_home": float(d["probs"]["H"]),
                 "p_draw": float(d["probs"]["D"]),
-                "p_away": float(d["probs"]["A"])})
+                "p_away": float(d["probs"]["A"]),
+                "top_scores": top_scorelines(d["matrix"], 2)})
             self.state.record_match(
                 r.date, r.home_team, r.away_team, hs, as_, neutral,
                 self.elo.get(r.home_team, BASE),

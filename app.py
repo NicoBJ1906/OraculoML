@@ -1331,14 +1331,15 @@ pending = fixtures[~fixtures.apply(
 
 # ---- RBAC (spec §8): viewers no construyen el tab de ingesta
 IS_ADMIN = auth.is_admin()
-_labels = ["Próximos partidos", "Líderes", "Cuadro", "Eliminatorias",
-           "Camino al título", "Tablas", "Auditoría"]
+_labels = ["Próximos partidos", "Aciertos", "Líderes", "Cuadrangular",
+           "Eliminatorias", "Camino al título", "Tablas", "Auditoría"]
 if IS_ADMIN:
     _labels.insert(1, "Ingresar resultado")
 _tabs = dict(zip(_labels, st.tabs(_labels)))
 tab_pred = _tabs["Próximos partidos"]
+tab_hits = _tabs["Aciertos"]
 tab_leaders = _tabs["Líderes"]
-tab_bracket = _tabs["Cuadro"]
+tab_bracket = _tabs["Cuadrangular"]
 tab_ko = _tabs["Eliminatorias"]
 tab_champ = _tabs["Camino al título"]
 tab_tablas = _tabs["Tablas"]
@@ -1516,6 +1517,56 @@ if IS_ADMIN:  # RBAC: el tab solo existe para admin (spec R1)
                       "al modelo.")
                 st.rerun()
 
+# ------------------------------------------------ TAB: aciertos
+with tab_hits:
+    st.subheader("Aciertos del modelo — pronóstico vs realidad")
+    st.caption("Cada partido ingresado, con la predicción que el modelo "
+               "hizo ANTES de conocer el resultado. Marcador: cuenta como "
+               "acierto si el real está en el top-2 de marcadores exactos "
+               "predichos.")
+    audit = engine.live_audit
+    if not audit:
+        st.info("Ingresa resultados del torneo para ver la evaluación.")
+    else:
+        lbl1x2 = {"H": "Local", "D": "Empate", "A": "Visitante"}
+        rows_h = []
+        ok1, ok2 = 0, 0
+        for m in audit:
+            probs = (("H", m["p_home"]), ("D", m["p_draw"]),
+                     ("A", m["p_away"]))
+            pred, pconf = max(probs, key=lambda x: x[1])
+            hs, as_ = m["home_score"], m["away_score"]
+            real = "H" if hs > as_ else ("A" if as_ > hs else "D")
+            hit1 = pred == real
+            tops = m.get("top_scores") or []
+            hit2 = f"{hs}-{as_}" in {s for s, _ in tops}
+            ok1 += hit1
+            ok2 += hit2
+            rows_h.append({
+                "Fecha": pd.Timestamp(m["date"]).date(),
+                "Local": m["home_team"],
+                "Real": f"{hs} – {as_}",
+                "Visitante": m["away_team"],
+                "Pronóstico": f"{lbl1x2[pred]} ({100 * pconf:.0f}%)",
+                "1X2": "✅" if hit1 else "❌",
+                "Marcadores predichos": " · ".join(
+                    f"{s.replace('-', '–')} {100 * pr:.0f}%"
+                    for s, pr in tops) or "—",
+                "Marcador": "✅" if hit2 else "❌",
+            })
+        n = len(rows_h)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Partidos evaluados", n)
+        c2.metric("Acierto 1X2", f"{ok1}/{n}", f"{100 * ok1 / n:.0f}%")
+        c3.metric("Acierto marcador (top-2)", f"{ok2}/{n}",
+                  f"{100 * ok2 / n:.0f}%")
+        df_h = pd.DataFrame(rows_h).sort_values("Fecha", ascending=False)
+        st.markdown(tbl(df_h, flags={"Local", "Visitante"}),
+                    unsafe_allow_html=True)
+        st.caption("Referencia honesta: 55-60% en 1X2 es el techo del "
+                   "estado del arte; un marcador exacto ronda 9-13% por "
+                   "partido, así que ~20-25% con top-2 es excelente.")
+
 # ------------------------------------------------ TAB 3: líderes
 with tab_leaders:
     st.markdown(
@@ -1613,7 +1664,7 @@ with tab_bracket:
                "los candidatos alternativos a ocupar cada llave.")
     with st.spinner("Simulando el torneo..."):
         payload = build_bracket_payload(STORE.token(), n_sims_b)
-    render_bracket(payload, height=790)
+    render_bracket(payload, height=1050)
 
 # ------------------------------------------------ TAB 5: eliminatorias
 with tab_ko:

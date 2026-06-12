@@ -26,8 +26,10 @@
      el árbol conserva un ancho mínimo legible y el swipe ocurre dentro
      del iframe — la página padre nunca scrollea en X. */
   #treewrap { height: calc(100vh - 60px); overflow-x: auto;
-              overflow-y: hidden; -webkit-overflow-scrolling: touch; }
-  #tree { display: flex; gap: 12px; height: 100%;
+              overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  /* min-height: si el iframe es bajo, scroll-y interno en vez de llaves
+     superpuestas (el solapamiento escondia los partidos de abajo) */
+  #tree { display: flex; gap: 12px; height: 100%; min-height: 940px;
           position: relative; }
   @media (max-width: 768px) {
     #tree { min-width: 880px; }
