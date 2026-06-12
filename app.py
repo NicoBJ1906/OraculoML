@@ -569,6 +569,32 @@ div[data-testid="stVerticalBlockBorderWrapper"]:hover {
 .fc-title {font-size: .85rem; font-weight: 700; color: var(--text);
   margin: 0 0 4px 0; letter-spacing: -.01em;}
 
+/* ---- tab Eliminatorias: cards de marcadores más probables ----
+   grid auto-fit: 5 columnas en desktop, 2-3 en móvil sin media queries */
+.sl-grid {display: grid; gap: 10px; margin: 12px 0 4px;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));}
+.sl-card {background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 16px; padding: 12px 8px; text-align: center;
+  transition: transform .2s ease, border-color .2s ease;}
+.sl-card:hover {transform: translateY(-3px); border-color: var(--accent);}
+.sl-card.top {background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none; box-shadow: 0 8px 24px var(--glow);}
+.sl-tag {font-size: .56rem; letter-spacing: .12em; font-weight: 700;
+  color: var(--muted); text-transform: uppercase;}
+.sl-score {font-size: 1.35rem; font-weight: 800; color: var(--text);
+  margin-top: 2px;}
+.sl-pct {font-weight: 700; color: var(--accent); font-size: .95rem;}
+.sl-card.top .sl-tag {color: rgba(255,255,255,.85);}
+.sl-card.top .sl-score, .sl-card.top .sl-pct {color: #fff;}
+.sl-bar {height: 4px; border-radius: 99px; background: var(--border);
+  margin-top: 8px; overflow: hidden;}
+.sl-bar div {height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));}
+.sl-card.top .sl-bar {background: rgba(255,255,255,.3);}
+.sl-card.top .sl-bar div {background: #fff;}
+.bet-hint {margin-top: 12px; padding: 10px 14px; border-radius: 14px;
+  border: 1px dashed var(--accent); font-size: .85rem; color: var(--text);}
+
 /* ---- tab Auditoría: filas de backtesting ---- */
 .audit-row {display: flex; align-items: center; gap: 16px;
   padding: 14px 18px; margin-bottom: 10px;}
@@ -1594,11 +1620,10 @@ with tab_ko:
     st.subheader("Predictor de cruces")
     st.caption("Cuando se definan los cruces, elige las dos selecciones. "
                "P(avanza) incluye prórroga/penales aproximados por Elo.")
-    st.caption("⚙️ **Modelo:** ensemble Regresión Logística (peso 0.8) + "
-               "Poisson Dixon-Coles (0.2, ρ=−0.15) sobre features "
-               "Elo/forma/H2H pre-partido, con ajustes en vivo (momentum, "
-               "suspensiones, lesiones) y corrección bayesiana del torneo "
-               "(ritmo de goles, empates, altitud).")
+    st.caption("⚙️ **Modelo:** ensemble calibrado (Logística + Poisson "
+               "Dixon-Coles) sobre Elo/forma/H2H/valor de plantilla "
+               "pre-partido, con ajustes en vivo (momentum, suspensiones, "
+               "lesiones) y corrección bayesiana del torneo.")
     teams48 = sorted(load_teams().name_canonical)
     c1, c2, c3 = st.columns([2, 2, 1])
     k1 = c1.selectbox("Equipo 1", teams48, key="k1")
@@ -1616,9 +1641,29 @@ with tab_ko:
         c2.metric("Goles esperados",
                   f"{p['lambda_home']:.1f} – {p['lambda_away']:.1f}")
         c3.metric(f"{k2} avanza", f"{100 * p['p_away_advances']:.0f}%")
-        chips = "".join(f'<span class="pill">{s.replace("-", " – ")} · '
-                        f'{100 * pr:.0f}%</span>'
-                        for s, pr in p["scorelines"])
+        top5 = p["scorelines"][:5]
+        pmax = top5[0][1] if top5 else 1.0
+        cards = "".join(
+            f'<div class="sl-card{" top" if i == 0 else ""}">'
+            f'<div class="sl-tag">{"🎯 más probable" if i == 0 else f"#{i + 1}"}'
+            f'</div><div class="sl-score">{s.replace("-", " – ")}</div>'
+            f'<div class="sl-pct">{100 * pr:.1f}%</div>'
+            f'<div class="sl-bar"><div style="width:{100 * pr / pmax:.0f}%">'
+            f'</div></div></div>'
+            for i, (s, pr) in enumerate(top5))
+        chips = f'<div class="sl-grid">{cards}</div>'
+        # señal de valor: si empate + no-favorito superan al favorito, el
+        # favorito NO llega ni al 50% — el empate está bien cotizado
+        ph_, pd_, pa_ = p["p_home"], p["p_draw"], p["p_away"]
+        fav, under = (k1, k2) if ph_ >= pa_ else (k2, k1)
+        fav_p, under_p = max(ph_, pa_), min(ph_, pa_)
+        if pd_ + under_p > fav_p:
+            chips += (f'<div class="bet-hint">💡 <b>Señal de valor:</b> '
+                      f'empate ({100 * pd_:.0f}%) + {esc(under)} '
+                      f'({100 * under_p:.0f}%) = '
+                      f'{100 * (pd_ + under_p):.0f}% supera a {esc(fav)} '
+                      f'({100 * fav_p:.0f}%) — el favorito no llega al 50%: '
+                      f'el empate es una apuesta con valor.</div>')
 
         def xai_side(team: str) -> str:
             e = engine.state.explain(team, pd.Timestamp(kdate))
