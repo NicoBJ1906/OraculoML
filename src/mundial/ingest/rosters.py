@@ -85,7 +85,7 @@ def build_rosters_tm(perf: pd.DataFrame, profiles: pd.DataFrame,
 
 def citizens_by_value(profiles: pd.DataFrame, values: pd.DataFrame,
                       teams: list[str], aliases: dict[str, str] | None = None,
-                      top_n: int = 60, since: str = "2025-01-01") -> pd.DataFrame:
+                      top_n: int = 120, since: str = "2024-07-01") -> pd.DataFrame:
     """Capa de respaldo: ciudadanos con valoración de mercado reciente,
     top_n por valor por selección. Cubre naturalizados y debutantes que aún
     no figuran en player_national_performances (ej. Julián Quiñones con
@@ -110,8 +110,12 @@ def citizens_by_value(profiles: pd.DataFrame, values: pd.DataFrame,
 
 
 def merge_rosters(*sources: pd.DataFrame) -> pd.DataFrame:
-    """Une fuentes sin duplicar (team, player); la primera fuente manda."""
+    """Une fuentes sin duplicar (team, player); la primera fuente manda.
+    El dedupe ignora acentos ("Katić" == "Katic" entre fuentes)."""
+    from mundial.transform.names import strip_accents
+
     both = pd.concat(sources, ignore_index=True)
-    out = both.drop_duplicates(subset=["team", "player"], keep="first")
+    key = strip_accents(both["player"].astype("string")).str.lower()
+    out = both[~pd.DataFrame({"team": both["team"], "k": key}).duplicated()]
     return out.sort_values(["team", "goals", "player"],
                            ascending=[True, False, True]).reset_index(drop=True)

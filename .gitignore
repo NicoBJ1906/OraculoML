@@ -8,6 +8,7 @@ __pycache__/
 # Datos: se versiona SOLO lo mínimo que la app necesita desplegada en
 # Streamlit Cloud (~7.5MB); el resto se regenera con los scripts 00-06
 data/raw/*
+!data/raw/roster_extras.csv
 !data/raw/international/
 data/raw/international/*
 !data/raw/international/results.csv

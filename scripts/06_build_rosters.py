@@ -47,6 +47,15 @@ def main() -> None:
               f"{len(cit):,} ciudadanos con valoración vigente")
         out = merge_rosters(tm, out, cit)
 
+    # extras manuales: jugadores que NINGUNA fuente trae (convocados nuevos
+    # posteriores al snapshot, ej. Jovo Lukić con Bosnia)
+    extras_path = ROOT / "data/raw/roster_extras.csv"
+    if extras_path.exists():
+        ex = pd.read_csv(extras_path)
+        ex["goals"], ex["last_seen"] = 0, pd.NaT
+        out = merge_rosters(out, ex)
+        print(f"extras manuales: {len(ex)}")
+
     dest = ROOT / "data/processed/rosters_2026.parquet"
     out.to_parquet(dest, index=False)
     print(f"OK: {len(out):,} jugadores de {out.team.nunique()} selecciones "
