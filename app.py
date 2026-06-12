@@ -94,8 +94,10 @@ FLAG_ISO = {
     "Uzbekistan": "uz", "Wales": "gb-wls",
 }
 
+_FAVICON = ROOT / "assets" / "favicon.png"
 st.set_page_config(page_title="Oráculo personal de Nicolás — Mundial 2026",
-                   page_icon="⚽", layout="wide")
+                   page_icon=str(_FAVICON) if _FAVICON.exists() else "⚽",
+                   layout="wide")
 
 # ----------------------------------------------------------------- temas
 PALETTES = {
@@ -698,15 +700,21 @@ def _club_gate() -> None:
         return
     _, mid, _ = st.columns([1, 2, 1])
     with mid:
+        import base64
+        foto = ROOT / "assets" / "club.jpeg"
+        img = ('<img src="data:image/jpeg;base64,'
+               + base64.b64encode(foto.read_bytes()).decode()
+               + '" style="width:100%;max-width:380px;border-radius:18px;'
+               'box-shadow:0 10px 32px var(--shadow)">'
+               ) if foto.exists() else '<div style="font-size:2.6rem">⚽</div>'
         st.markdown(
-            '<div class="glass" style="text-align:center;margin-top:9vh;'
-            'padding:38px 30px">'
-            '<div style="font-size:2.6rem">⚽</div>'
-            '<h2 class="hero" style="font-size:1.7rem;margin:8px 0 4px">'
+            '<div class="glass" style="text-align:center;margin-top:6vh;'
+            f'padding:30px 26px">{img}'
+            '<h2 class="hero" style="font-size:1.7rem;margin:14px 0 4px">'
             'El club de amigos de Nicolás</h2>'
             '<p style="color:var(--muted);font-size:.9rem;margin-bottom:0">'
-            'Predicciones del Mundial 2026 con IA · solo para el parche. '
-            'Pide la clave y entra.</p></div>',
+            'Solo para mis amiguitos — solo quien me conoce sabe la '
+            'clave.</p></div>',
             unsafe_allow_html=True)
         tries = st.session_state.get("club_tries", 0)
         if tries >= 3:
