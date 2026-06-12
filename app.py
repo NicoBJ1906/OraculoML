@@ -711,7 +711,7 @@ def _club_gate() -> None:
             '<div class="glass" style="text-align:center;margin-top:6vh;'
             f'padding:30px 26px">{img}'
             '<h2 class="hero" style="font-size:1.7rem;margin:14px 0 4px">'
-            'El club de amigos de Nicolás</h2>'
+            'El oráculo personal de Nicolás</h2>'
             '<p style="color:var(--muted);font-size:.9rem;margin-bottom:0">'
             'Solo para mis amiguitos — solo quien me conoce sabe la '
             'clave.</p></div>',
