@@ -737,6 +737,16 @@ def _club_gate() -> None:
                         else " (último intento agotado)"))
             if tries + 1 >= 3:
                 st.rerun()
+        qr = ROOT / "assets" / "qr.png"
+        if qr.exists():
+            st.markdown(
+                '<div style="text-align:center;margin-top:18px">'
+                '<p style="color:var(--muted);font-size:.85rem;'
+                'margin-bottom:8px">¿Quejas? Escanea este QR 👇</p>'
+                '<img src="data:image/png;base64,'
+                + base64.b64encode(qr.read_bytes()).decode()
+                + '" style="width:130px;border-radius:12px;background:#fff;'
+                'padding:6px"></div>', unsafe_allow_html=True)
     st.stop()
 
 
