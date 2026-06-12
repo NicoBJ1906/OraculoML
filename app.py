@@ -703,11 +703,17 @@ def _club_gate() -> None:
             'padding:38px 30px">'
             '<div style="font-size:2.6rem">⚽</div>'
             '<h2 class="hero" style="font-size:1.7rem;margin:8px 0 4px">'
-            'El club de amigos de Nico</h2>'
+            'El club de amigos de Nicolás</h2>'
             '<p style="color:var(--muted);font-size:.9rem;margin-bottom:0">'
             'Predicciones del Mundial 2026 con IA · solo para el parche. '
             'Pide la clave y entra.</p></div>',
             unsafe_allow_html=True)
+        tries = st.session_state.get("club_tries", 0)
+        if tries >= 3:
+            st.error("🚫 Tres intentos fallidos — ya no puedes entrar. "
+                     "Habla con Nicolás si crees que mereces otra "
+                     "oportunidad.")
+            st.stop()
         pw = st.text_input("Clave del club", type="password",
                            key="club_pw", label_visibility="collapsed",
                            placeholder="🔑 Clave del club")
@@ -716,7 +722,13 @@ def _club_gate() -> None:
             if pw == clave:
                 st.session_state["club_ok"] = True
                 st.rerun()
-            st.error("Esa no es la clave del club 😅")
+            st.session_state["club_tries"] = tries + 1
+            left = 2 - tries
+            st.error("¡Esa no es la clave mi crack! Keep trying 😎"
+                     + (f" (te quedan {left} intentos)" if left > 0
+                        else " (último intento agotado)"))
+            if tries + 1 >= 3:
+                st.rerun()
     st.stop()
 
 
