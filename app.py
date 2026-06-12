@@ -724,7 +724,7 @@ def _club_gate() -> None:
             st.stop()
         pw = st.text_input("Clave del club", type="password",
                            key="club_pw", label_visibility="collapsed",
-                           placeholder="🔑 Clave del club")
+                           placeholder="🔮 Clave para ver el futuroooo")
         if st.button("Entrar al club", type="primary",
                      use_container_width=True):
             if pw == clave:
