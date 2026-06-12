@@ -684,6 +684,45 @@ inject_theme()
 inject_effects()          # Lenis + GSAP + fondo WebGL (degradable, spec §7)
 
 
+# --------------------------------------------- puerta de entrada (viewers)
+def _club_gate() -> None:
+    """Login de acceso general "El club de amigos de Nico": solo entra
+    quien tenga la clave (secret `club_password`). Independiente del
+    admin (auth.py, intacto). Sin el secret configurado no hay puerta
+    (local / tests / CI siguen igual)."""
+    try:
+        clave = str(st.secrets["club_password"])
+    except Exception:
+        return
+    if st.session_state.get("club_ok"):
+        return
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid:
+        st.markdown(
+            '<div class="glass" style="text-align:center;margin-top:9vh;'
+            'padding:38px 30px">'
+            '<div style="font-size:2.6rem">⚽</div>'
+            '<h2 class="hero" style="font-size:1.7rem;margin:8px 0 4px">'
+            'El club de amigos de Nico</h2>'
+            '<p style="color:var(--muted);font-size:.9rem;margin-bottom:0">'
+            'Predicciones del Mundial 2026 con IA · solo para el parche. '
+            'Pide la clave y entra.</p></div>',
+            unsafe_allow_html=True)
+        pw = st.text_input("Clave del club", type="password",
+                           key="club_pw", label_visibility="collapsed",
+                           placeholder="🔑 Clave del club")
+        if st.button("Entrar al club", type="primary",
+                     use_container_width=True):
+            if pw == clave:
+                st.session_state["club_ok"] = True
+                st.rerun()
+            st.error("Esa no es la clave del club 😅")
+    st.stop()
+
+
+_club_gate()
+
+
 # ----------------------------------------------------------------- carga
 @st.cache_resource
 def load_artifacts() -> dict:
