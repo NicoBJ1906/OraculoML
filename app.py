@@ -40,6 +40,7 @@ import streamlit as st
 
 from frontend import inject_effects, render_bracket
 from mundial import auth
+from mundial.display import display_pred
 from mundial.live.engine import LiveEngine
 from mundial.live.store import LiveStore
 from mundial.predict.engine import MARKET_WEIGHT, devig
@@ -1066,18 +1067,6 @@ def tbl(df: pd.DataFrame, flags: set[str] | None = None,
     return (f'<div class="tblwrap"{style}><table class="tbl">'
             f'<thead><tr>{head}</tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>')
-
-
-def display_pred(ph: float, pd_: float, pa: float,
-                 home: str, away: str) -> tuple[str, str]:
-    """Pronóstico MOSTRADO (cosmético, no toca la lógica del modelo): si el
-    empate es competitivo (>=30% y diferencia local-visita <=12pp) lo
-    anuncia como partido cerrado; si no, el favorito. Devuelve (label, css)."""
-    if pd_ >= 0.30 and abs(ph - pa) <= 0.12:
-        return ("Partido cerrado · empate probable", "d")
-    if ph >= pa:
-        return (f"Gana {home}", "h")
-    return (f"Gana {away}", "a")
 
 
 def match_card(r, p, adj: tuple[float, float] | None = None,

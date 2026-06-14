@@ -48,10 +48,10 @@ def test_engine_blend_mercado_mueve_probs():
 
 
 def test_display_pred_empate_y_favorito():
-    import app
-    lbl, css = app.display_pred(0.34, 0.33, 0.33, "X", "Y")
+    from mundial.display import display_pred
+    lbl, css = display_pred(0.34, 0.33, 0.33, "X", "Y")
     assert css == "d" and "cerrado" in lbl.lower()
-    lbl, css = app.display_pred(0.70, 0.20, 0.10, "X", "Y")
+    lbl, css = display_pred(0.70, 0.20, 0.10, "X", "Y")
     assert css == "h" and "X" in lbl
 
 
