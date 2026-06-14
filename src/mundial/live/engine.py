@@ -36,8 +36,10 @@ class LiveEngine(PredictionEngine):
         # resultado live (la misma que alimenta al corrector) vs lo real
         self.live_audit: list[dict] = []
         self._live_ready = False          # hooks apagados durante el replay
+        odds = _load_odds(store)
         super().__init__(matches, clf, pois_home, pois_away, rho, blend,
-                         xgb=xgb, weights=weights, squad_values=squad_values)
+                         xgb=xgb, weights=weights, squad_values=squad_values,
+                         odds=odds)
 
         live = store.results()
         if len(live):
@@ -97,3 +99,18 @@ def _to_bool(x) -> bool:
     if isinstance(x, str):
         return x.strip().lower() in ("true", "1")
     return bool(x)
+
+
+def _load_odds(store: LiveStore) -> dict:
+    """{(home,away): [pA,pD,pH] de-vig} desde las cuotas ingresadas."""
+    from mundial.predict.engine import devig
+
+    df = store.odds()
+    out = {}
+    for r in df.itertuples(index=False):
+        try:
+            out[(r.home_team, r.away_team)] = devig(
+                float(r.odd_home), float(r.odd_draw), float(r.odd_away))
+        except (ValueError, ZeroDivisionError, TypeError):
+            continue
+    return out

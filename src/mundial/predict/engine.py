@@ -27,11 +27,25 @@ FORM_WINDOW = 5
 # concentraba P(campeón) de forma irreal en el Monte Carlo.
 TIEBREAK_DAMP = 0.25
 
+# Peso del mercado (cuotas de-vig) en el ensemble, donde haya cuota ingresada.
+# Prior 0.50: el mercado agrega información que el modelo no ve (lesiones de
+# última hora, opinión experta) y calibra empates mejor, pero conservamos la
+# mitad de la opinión del modelo puro. Solo aplica si existe cuota.
+MARKET_WEIGHT = 0.50
+
 
 def tiebreak_prob(elo_h: float, elo_a: float) -> float:
     """P(local gana prórroga/penales): logística Elo comprimida hacia 0.5."""
     p = 1.0 / (1.0 + 10 ** ((elo_a - elo_h) / 400.0))
     return 0.5 + (p - 0.5) * TIEBREAK_DAMP
+
+
+def devig(odd_home: float, odd_draw: float, odd_away: float) -> np.ndarray:
+    """Probabilidades implícitas 1X2 SIN el margen de la casa, en orden
+    ['A','D','H'] (el mismo del clasificador). Cuota decimal -> 1/cuota
+    normalizado para que sume 1 (quita el 'vig')."""
+    raw = np.array([1.0 / odd_away, 1.0 / odd_draw, 1.0 / odd_home])
+    return raw / raw.sum()
 
 
 def _pair(a: str, b: str) -> tuple[str, str]:
@@ -44,12 +58,15 @@ class PredictionEngine:
     def __init__(self, matches: pd.DataFrame, clf, pois_home, pois_away,
                  rho: float = 0.0, blend: float = 0.5, xgb=None,
                  weights: tuple[float, float, float] | None = None,
-                 squad_values: pd.DataFrame | None = None):
+                 squad_values: pd.DataFrame | None = None,
+                 odds: dict[tuple[str, str], np.ndarray] | None = None,
+                 market_weight: float = MARKET_WEIGHT):
         """matches: silver matches (histórico completo, ordenado o no).
 
         xgb/weights: tercer modelo del ensemble (w_clf, w_xgb, w_pois);
         sin ellos se usa el blend de 2 modelos (back-compat).
         squad_values: tabla (team, year, log_value) del script 07.
+        odds: {(home,away): [pA,pD,pH] de-vig} para blend con el mercado.
         """
         self.clf = clf
         self.pois_home = pois_home
@@ -58,6 +75,8 @@ class PredictionEngine:
         self.blend = blend  # peso del clasificador en el ensemble 2-modelos
         self.xgb = xgb
         self.weights = tuple(weights) if weights is not None else None
+        self._odds = odds or {}
+        self.market_weight = market_weight
         # el XGB solo participa si la calibración le dio peso real — con
         # peso 0 no se paga su inferencia (la arquitectura queda lista)
         self.xgb_active = (xgb is not None and self.weights is not None
@@ -225,6 +244,14 @@ class PredictionEngine:
         p_pois = np.array([pp["A"], pp["D"], pp["H"]])
         p = self._mix(p_clf, p_xgb, p_pois)
         p = self._adjust_probs(date, p)
+
+        # mezcla con el mercado (cuotas de-vig) donde haya cuota ingresada;
+        # antes de reescalar la matriz para que marcador y % sigan coherentes
+        mkt = self._odds.get((home, away))
+        if mkt is not None and self.market_weight > 0:
+            w = self.market_weight
+            p = (1 - w) * p + w * np.asarray(mkt)
+            p = p / p.sum()
 
         order = list(self.clf.classes_)  # ['A','D','H']
         probs = dict(zip(order, p))

@@ -43,6 +43,8 @@ RESULT_COLS = [
 PLAYER_COLS = ["match_id", "date", "team", "player", "event", "minute"]
 CARD_COLS = ["match_id", "date", "team", "player", "card", "minute"]
 INJURY_COLS = ["match_id", "date", "team", "player", "severity"]
+ODDS_COLS = ["match_id", "date", "home_team", "away_team",
+             "odd_home", "odd_draw", "odd_away"]
 
 
 def make_match_id(date, home: str, away: str) -> str:
@@ -74,6 +76,7 @@ class LiveStore:
         self.f_players = self.dir / "live_players.csv"
         self.f_cards = self.dir / "live_discipline.csv"
         self.f_injuries = self.dir / "live_injuries.csv"
+        self.f_odds = self.dir / "live_odds.csv"
         self._github_token = github_token
         self._github_repo = github_repo
         self._github_branch = github_branch
@@ -82,11 +85,12 @@ class LiveStore:
         self.last_sync_ok: bool | None = None
 
     def _sync(self) -> None:
-        """Sincroniza los 4 CSVs a GitHub si hay token configurado."""
+        """Sincroniza los CSVs live a GitHub si hay token configurado."""
         if not self._github_token:
             return
         self.last_sync_ok = sync_live_files(
-            [self.f_results, self.f_players, self.f_cards, self.f_injuries],
+            [self.f_results, self.f_players, self.f_cards, self.f_injuries,
+             self.f_odds],
             token=self._github_token,
             repo=self._github_repo,
             branch=self._github_branch,
@@ -117,6 +121,20 @@ class LiveStore:
 
     def injuries(self) -> pd.DataFrame:
         return self._read(self.f_injuries, INJURY_COLS)
+
+    def odds(self) -> pd.DataFrame:
+        return self._read(self.f_odds, ODDS_COLS)
+
+    def add_odds(self, row: dict) -> None:
+        """Guarda/actualiza las cuotas 1X2 de un partido (una fila por
+        match_id; reingresar reemplaza)."""
+        mid = make_match_id(row["date"], row["home_team"], row["away_team"])
+        cur = self.odds()
+        cur = cur[cur.match_id != mid]
+        new = pd.concat([cur, pd.DataFrame([{**row, "match_id": mid}])[
+            ODDS_COLS]], ignore_index=True)
+        new.to_csv(self.f_odds, index=False)
+        self._sync()
 
     # ------------------------------------------------ escritura
     def _append(self, path: Path, cols: list[str], rows: list[dict]) -> None:
@@ -160,9 +178,11 @@ class LiveStore:
         for path, cols in ((self.f_results, RESULT_COLS),
                            (self.f_players, PLAYER_COLS),
                            (self.f_cards, CARD_COLS),
-                           (self.f_injuries, INJURY_COLS)):
-            df = self._read(path, cols)
-            df[df.match_id != match_id].to_csv(path, index=False)
+                           (self.f_injuries, INJURY_COLS),
+                           (self.f_odds, ODDS_COLS)):
+            if path.exists():
+                df = self._read(path, cols)
+                df[df.match_id != match_id].to_csv(path, index=False)
         self._sync()
 
     # ------------------------------------------------ utilidades
@@ -170,7 +190,7 @@ class LiveStore:
         """Cambia cuando cambia cualquier archivo live (clave de caché)."""
         return "|".join(str(p.stat().st_mtime_ns) if p.exists() else "0"
                         for p in (self.f_results, self.f_players,
-                                  self.f_cards, self.f_injuries))
+                                  self.f_cards, self.f_injuries, self.f_odds))
 
     def consolidated_matches(self, matches_parquet: Path) -> pd.DataFrame:
         """Histórico silver + resultados en vivo, mismo esquema, sin duplicar

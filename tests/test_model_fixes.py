@@ -12,9 +12,64 @@ import pytest
 
 from mundial.features.build import REST_DAYS_CAP, build_features
 from mundial.features.elo import BASE, K, compute_elo, k_for
-from mundial.predict.engine import tiebreak_prob
+from mundial.predict.engine import devig, tiebreak_prob
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+# ---------------------------------------------------------------------------
+# Mercado: devig y blend
+# ---------------------------------------------------------------------------
+
+def test_devig_normaliza_y_ordena():
+    p = devig(2.0, 3.4, 4.0)        # orden de salida ['A','D','H']
+    assert p.sum() == pytest.approx(1.0)
+    # favorito (cuota 2.0 = local) debe ser el de mayor prob -> índice H
+    assert p[2] > p[1] > p[0]
+    # quita el vig: 1/2+1/3.4+1/4 = 1.044 > 1, normalizado baja
+    assert p[2] < 1 / 2.0
+
+
+def test_engine_blend_mercado_mueve_probs():
+    import numpy as np
+
+    from mundial.predict.engine import PredictionEngine
+
+    eng = PredictionEngine.__new__(PredictionEngine)
+    eng.market_weight = 0.5
+    base = np.array([0.2, 0.3, 0.5])
+    mkt = np.array([0.5, 0.3, 0.2])
+    # replica la fórmula del blend
+    eng._odds = {("A", "B"): mkt}
+    p = (1 - eng.market_weight) * base + eng.market_weight * mkt
+    p = p / p.sum()
+    assert p[0] == pytest.approx(0.35)    # 0.5*0.2 + 0.5*0.5
+    assert p[2] == pytest.approx(0.35)
+
+
+def test_display_pred_empate_y_favorito():
+    import app
+    lbl, css = app.display_pred(0.34, 0.33, 0.33, "X", "Y")
+    assert css == "d" and "cerrado" in lbl.lower()
+    lbl, css = app.display_pred(0.70, 0.20, 0.10, "X", "Y")
+    assert css == "h" and "X" in lbl
+
+
+def test_store_odds_roundtrip(tmp_path):
+    from mundial.live.store import LiveStore
+    s = LiveStore(tmp_path)
+    s.add_odds({"date": pd.Timestamp("2026-06-20"), "home_team": "Brazil",
+                "away_team": "Morocco", "odd_home": 1.8, "odd_draw": 3.5,
+                "odd_away": 4.5})
+    df = s.odds()
+    assert len(df) == 1
+    assert df.iloc[0].odd_home == 1.8
+    # reingresar reemplaza (no duplica)
+    s.add_odds({"date": pd.Timestamp("2026-06-20"), "home_team": "Brazil",
+                "away_team": "Morocco", "odd_home": 2.0, "odd_draw": 3.3,
+                "odd_away": 4.0})
+    df = s.odds()
+    assert len(df) == 1 and df.iloc[0].odd_home == 2.0
 
 
 # ---------------------------------------------------------------------------

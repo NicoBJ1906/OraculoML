@@ -42,6 +42,7 @@ from frontend import inject_effects, render_bracket
 from mundial import auth
 from mundial.live.engine import LiveEngine
 from mundial.live.store import LiveStore
+from mundial.predict.engine import MARKET_WEIGHT, devig
 from mundial.predict.montecarlo import TournamentSimulator
 
 def _github_cfg() -> tuple[str | None, str, str]:
@@ -571,6 +572,14 @@ div[data-testid="stVerticalBlockBorderWrapper"]:hover {
 .fc-title {font-size: .85rem; font-weight: 700; color: var(--text);
   margin: 0 0 4px 0; letter-spacing: -.01em;}
 
+/* ---- pronóstico mostrado en la card (cosmético) ---- */
+.mc-pred {margin-top: 10px; text-align: center; font-weight: 700;
+  font-size: .82rem; padding: 6px 10px; border-radius: 12px;
+  border: 1px solid var(--border);}
+.mc-pred.h {color: var(--accent); border-color: var(--accent);}
+.mc-pred.a {color: #19c8ff; border-color: #19c8ff;}
+.mc-pred.d {color: var(--muted);}
+
 /* ---- tab Eliminatorias: cards de marcadores más probables ----
    grid auto-fit: 5 columnas en desktop, 2-3 en móvil sin media queries */
 .sl-grid {display: grid; gap: 10px; margin: 12px 0 4px;
@@ -1059,6 +1068,18 @@ def tbl(df: pd.DataFrame, flags: set[str] | None = None,
             f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
+def display_pred(ph: float, pd_: float, pa: float,
+                 home: str, away: str) -> tuple[str, str]:
+    """Pronóstico MOSTRADO (cosmético, no toca la lógica del modelo): si el
+    empate es competitivo (>=30% y diferencia local-visita <=12pp) lo
+    anuncia como partido cerrado; si no, el favorito. Devuelve (label, css)."""
+    if pd_ >= 0.30 and abs(ph - pa) <= 0.12:
+        return ("Partido cerrado · empate probable", "d")
+    if ph >= pa:
+        return (f"Gana {home}", "h")
+    return (f"Gana {away}", "a")
+
+
 def match_card(r, p, adj: tuple[float, float] | None = None,
                xai_key: str = "") -> str:
     """HTML de una card de partido con diseño tipográfico premium.
@@ -1068,6 +1089,7 @@ def match_card(r, p, adj: tuple[float, float] | None = None,
     sede = f"{r.city}" + ("" if r.neutral else " · CASA")
     grupo = f"GRUPO {r.group} · " if r.group else ""
     ph, pd_, pa = p["p_home"], p["p_draw"], p["p_away"]
+    plabel, pcss = display_pred(ph, pd_, pa, r.home_team, r.away_team)
     adj_html = ""
     if adj and (abs(adj[0]) >= 0.5 or abs(adj[1]) >= 0.5):
         adj_html = (f'<span class="mc-adj">Δ {adj[0]:+.0f} / {adj[1]:+.0f}'
@@ -1089,6 +1111,7 @@ def match_card(r, p, adj: tuple[float, float] | None = None,
         f'<div class="mc-prob-block a"><span class="val">{100 * pa:.0f}%</span>'
         f'<span class="lbl">Visit.</span></div>'
         f'</div>'
+        f'<div class="mc-pred {pcss}">🔮 {esc(plabel)}</div>'
         f'</div>'
     )
 
@@ -1400,13 +1423,15 @@ pending = fixtures[~fixtures.apply(
 
 # ---- RBAC (spec §8): viewers no construyen el tab de ingesta
 IS_ADMIN = auth.is_admin()
-_labels = ["Próximos partidos", "Aciertos", "Líderes", "Cuadrangular",
-           "Eliminatorias", "Camino al título", "Tablas", "Auditoría"]
+_labels = ["Próximos partidos", "Aciertos", "Mercado", "Líderes",
+           "Cuadrangular", "Eliminatorias", "Camino al título", "Tablas",
+           "Auditoría"]
 if IS_ADMIN:
     _labels.insert(1, "Ingresar resultado")
 _tabs = dict(zip(_labels, st.tabs(_labels)))
 tab_pred = _tabs["Próximos partidos"]
 tab_hits = _tabs["Aciertos"]
+tab_market = _tabs["Mercado"]
 tab_leaders = _tabs["Líderes"]
 tab_bracket = _tabs["Cuadrangular"]
 tab_ko = _tabs["Eliminatorias"]
@@ -1600,13 +1625,20 @@ with tab_hits:
         lbl1x2 = {"H": "Local", "D": "Empate", "A": "Visitante"}
         rows_h = []
         ok1, ok2 = 0, 0
+        brier = 0.0
+        draws_real = draws_pred = 0
         for m in audit:
-            probs = (("H", m["p_home"]), ("D", m["p_draw"]),
-                     ("A", m["p_away"]))
+            pmap = {"H": m["p_home"], "D": m["p_draw"], "A": m["p_away"]}
+            probs = tuple(pmap.items())
             pred, pconf = max(probs, key=lambda x: x[1])
             hs, as_ = m["home_score"], m["away_score"]
             real = "H" if hs > as_ else ("A" if as_ > hs else "D")
             hit1 = pred == real
+            # Brier multiclase: Σ(p−y)² sobre las 3 clases
+            brier += sum((pmap[k] - (1.0 if k == real else 0.0)) ** 2
+                         for k in pmap)
+            draws_real += real == "D"
+            draws_pred += pred == "D"
             tops = m.get("top_scores") or []
             hit2 = f"{hs}-{as_}" in {s for s, _ in tops}
             ok1 += hit1
@@ -1629,12 +1661,95 @@ with tab_hits:
         c2.metric("Acierto 1X2", f"{ok1}/{n}", f"{100 * ok1 / n:.0f}%")
         c3.metric("Acierto marcador (top-2)", f"{ok2}/{n}",
                   f"{100 * ok2 / n:.0f}%")
+        d1, d2 = st.columns(2)
+        d1.metric("Brier score", f"{brier / n:.3f}",
+                  help="Calidad de las probabilidades (no del argmax). "
+                       "Azar≈0.67, bueno<0.60, excelente<0.55. Fiable a "
+                       "partir de ~20 partidos.")
+        d2.metric("Empates reales vs predichos",
+                  f"{draws_real} vs {draws_pred}",
+                  help="El 1X2 rara vez marca el empate como más probable "
+                       "(sesgo conocido); el corrector online ya infla "
+                       "P(empate) del resto del torneo.")
         df_h = pd.DataFrame(rows_h).sort_values("Fecha", ascending=False)
         st.markdown(tbl(df_h, flags={"Local", "Visitante"}),
                     unsafe_allow_html=True)
         st.caption("Referencia honesta: 55-60% en 1X2 es el techo del "
-                   "estado del arte; un marcador exacto ronda 9-13% por "
-                   "partido, así que ~20-25% con top-2 es excelente.")
+                   "estado del arte; lo que importa es el Brier (calibración), "
+                   "no el % de aciertos. Marcador exacto ~9-13%/partido, "
+                   "así que ~20-25% con top-2 es excelente.")
+
+# ------------------------------------------------ TAB: mercado
+with tab_market:
+    st.subheader("Modelo vs Mercado")
+    st.caption("Las cuotas de las casas agregan información que el modelo no "
+               "ve (lesiones de última hora, opinión experta) y calibran "
+               "mejor los empates. Donde ingreses cuotas, el motor las mezcla "
+               f"al {int(MARKET_WEIGHT * 100)}% en TODAS las predicciones "
+               "(cards, eliminatorias, Monte Carlo).")
+
+    if IS_ADMIN:
+        with st.container(border=True):
+            st.markdown('<h4 class="fc-title">➕ Ingresar cuotas 1X2</h4>',
+                        unsafe_allow_html=True)
+            pend = fixtures if pending.empty else pending
+            oopts = {f"{r.date.date()} · {r.home_team} vs {r.away_team}": i
+                     for i, r in pend.iterrows()}
+            opk = st.selectbox("Partido", list(oopts), key="odds_pick")
+            orow = pend.loc[oopts[opk]]
+            oc1, oc2, oc3 = st.columns(3)
+            oh = oc1.number_input(f"Cuota {orow.home_team}", 1.01, 100.0,
+                                  2.00, 0.01, key="odd_h")
+            od = oc2.number_input("Cuota empate", 1.01, 100.0, 3.40, 0.01,
+                                  key="odd_d")
+            oa = oc3.number_input(f"Cuota {orow.away_team}", 1.01, 100.0,
+                                  3.80, 0.01, key="odd_a")
+            if st.button("💾 Guardar cuotas", type="primary",
+                         use_container_width=True):
+                STORE.add_odds({"date": orow.date, "home_team": orow.home_team,
+                                "away_team": orow.away_team, "odd_home": oh,
+                                "odd_draw": od, "odd_away": oa})
+                flash(f"💹 Cuotas guardadas: {orow.home_team} vs "
+                      f"{orow.away_team}.")
+                st.rerun()
+        show_flash()
+
+    odf = STORE.odds()
+    if odf.empty:
+        st.info("Aún no hay cuotas ingresadas. " + ("Agrégalas arriba para "
+                "comparar modelo vs mercado." if IS_ADMIN else
+                "El admin puede agregarlas."))
+    else:
+        rows_m = []
+        for r in odf.itertuples(index=False):
+            try:
+                pa_m, pd_m, ph_m = devig(float(r.odd_home), float(r.odd_draw),
+                                         float(r.odd_away))
+            except (ValueError, ZeroDivisionError, TypeError):
+                continue
+            p = engine.predict_match(pd.Timestamp(r.date), r.home_team,
+                                     r.away_team, r.home_team not in HOSTS)
+            # valor: el modelo supera al mercado por >=6pp en algún resultado
+            edges = {"Local": p["p_home"] - ph_m, "Empate": p["p_draw"] - pd_m,
+                     "Visita": p["p_away"] - pa_m}
+            best = max(edges, key=edges.get)
+            val = (f"📈 {best} (+{100 * edges[best]:.0f}pp)"
+                   if edges[best] >= 0.06 else "—")
+            rows_m.append({
+                "Local": r.home_team, "Visitante": r.away_team,
+                "Modelo (L/X/V)": f"{100 * p['p_home']:.0f} / "
+                f"{100 * p['p_draw']:.0f} / {100 * p['p_away']:.0f}",
+                "Mercado (L/X/V)": f"{100 * ph_m:.0f} / {100 * pd_m:.0f} / "
+                f"{100 * pa_m:.0f}",
+                "Valor del modelo": val,
+            })
+        st.markdown(tbl(pd.DataFrame(rows_m),
+                        flags={"Local", "Visitante"}),
+                    unsafe_allow_html=True)
+        st.caption("'Valor del modelo' = donde el modelo asigna ≥6pp más que "
+                   "el mercado a un resultado. NO es consejo de apuesta: el "
+                   "mercado suele tener razón, pero ahí está su desacuerdo.")
+
 
 # ------------------------------------------------ TAB 3: líderes
 with tab_leaders:

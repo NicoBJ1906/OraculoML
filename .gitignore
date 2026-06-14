@@ -25,6 +25,12 @@ data/processed/*
 # Datos dinámicos del torneo (estado personal, se crean desde la UI)
 data/live/*
 !data/**/.gitkeep
+# ...salvo los CSVs del torneo en curso (se versionan vía Opción A)
+!data/live/live_results.csv
+!data/live/live_players.csv
+!data/live/live_discipline.csv
+!data/live/live_injuries.csv
+!data/live/live_odds.csv
 
 # Modelos / experimentos
 mlruns/

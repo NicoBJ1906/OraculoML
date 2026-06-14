@@ -145,6 +145,14 @@ cada modificador con su etiqueta y puntos (contrato de XAI de la UI).
 **Invariante O1**: con 0 partidos, todos los factores = 1.0 (modelo base
 intacto). **Invariante O2**: la capa live JAMÁS llama `model.fit()`.
 
+**Invariante M5 (mercado)**: las cuotas 1X2 (`data/live/live_odds.csv`, tab
+Mercado) se de-vig con `engine.devig()` (1/cuota normalizado) y se mezclan en
+`match_distribution` tras los ajustes online y ANTES de reescalar la matriz:
+`p = (1−w)·p_modelo + w·mercado`, `MARKET_WEIGHT=0.50`, SOLO donde hay cuota
+para `(home,away)`. Sin cuota, comportamiento idéntico al modelo puro. El
+`display_pred` de la UI (empate visible) es cosmético y NO altera el `pred`
+que propaga el bracket (invariante U4).
+
 ## 4. Simulación Monte Carlo (`predict/montecarlo.py`)
 
 - Grupos: marcadores muestreados de la matriz de cada partido (o el resultado
