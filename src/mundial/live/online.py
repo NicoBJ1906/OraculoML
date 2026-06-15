@@ -31,7 +31,10 @@ ALTITUDE_M = {
 ALT_THRESHOLD = 1400
 
 N0_GOALS = 20.0    # prior en goles esperados (~8 partidos de evidencia previa)
-K0_DRAW = 25.0     # prior en partidos para la corrección de empates
+K0_DRAW = 12.0     # prior empates (bajado de 25: el Mundial 2026 arrancó con
+                   # ~43% de empates, el doble de lo normal — el corrector
+                   # debe responder más rápido a esa señal fuerte)
+DRAW_CAP = 1.55    # techo de draw_mult (subido de 1.25 por el mismo motivo)
 ALT_PRIOR = 1.05   # prior: ~5% más goles en altura
 ALT_N0 = 8.0
 XG_BLEND = 0.35    # peso del xG en los "goles observados"
@@ -82,7 +85,7 @@ class OnlineCorrector:
         if mean_pd > 0:
             self.draw_mult = float(np.clip(
                 (df["draw"].sum() + K0_DRAW * mean_pd)
-                / ((self.n + K0_DRAW) * mean_pd), 0.80, 1.25))
+                / ((self.n + K0_DRAW) * mean_pd), 0.80, DRAW_CAP))
 
         # altitud: solo con los partidos jugados en altura
         hi = df[df["alt"] >= ALT_THRESHOLD]

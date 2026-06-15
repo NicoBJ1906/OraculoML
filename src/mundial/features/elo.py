@@ -45,8 +45,19 @@ def _g_multiplier(goal_diff: int) -> float:
     return (11.0 + gd) / 8.0
 
 
-def compute_elo(matches: pd.DataFrame) -> pd.DataFrame:
-    """Añade elo_home_pre, elo_away_pre y elo_diff (valores ANTES del partido)."""
+# Regresión a la media por partido (decaimiento de rachas). PROBADO contra el
+# hold-out 2022 (2026-06-15): regress>0 EMPEORA el modelo (test log-loss
+# 0.868 -> 0.879 con 0.01, peor con más; accuracy baja en todos lados). O sea
+# el Elo NO está inflado: los tropiezos de Ecuador/España fueron varianza, no
+# rating injusto. Se deja en 0.0 (parámetro disponible por si cambia la
+# evidencia, pero NO reactivar sin re-validar en holdout).
+ELO_REGRESS = 0.0
+
+
+def compute_elo(matches: pd.DataFrame, regress: float = ELO_REGRESS) -> pd.DataFrame:
+    """Añade elo_home_pre, elo_away_pre y elo_diff (valores ANTES del partido).
+    `regress`: fracción [0,1) de reversión a BASE aplicada a ambos equipos
+    tras cada partido (decaimiento de rachas)."""
     df = matches.sort_values("date", kind="stable").reset_index(drop=True)
     home = df["home_team"].to_numpy()
     away = df["away_team"].to_numpy()
@@ -78,8 +89,11 @@ def compute_elo(matches: pd.DataFrame) -> pd.DataFrame:
         else:
             s_h = 0.0
         delta = ks[i] * _g_multiplier(int(hs[i] - as_[i])) * (s_h - exp_h)
-        ratings[h] = rh + delta
-        ratings[a] = ra - delta
+        nh, na = rh + delta, ra - delta
+        if regress:                       # reversión a la media (anti-racha)
+            nh = BASE + (nh - BASE) * (1.0 - regress)
+            na = BASE + (na - BASE) * (1.0 - regress)
+        ratings[h], ratings[a] = nh, na
 
     df["elo_home_pre"] = home_pre
     df["elo_away_pre"] = away_pre

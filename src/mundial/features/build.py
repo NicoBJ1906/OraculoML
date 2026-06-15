@@ -106,9 +106,10 @@ def _merge_squad_values(out: pd.DataFrame, squad_values: pd.DataFrame) -> pd.Dat
 
 
 def build_features(matches: pd.DataFrame,
-                   squad_values: pd.DataFrame | None = None) -> pd.DataFrame:
+                   squad_values: pd.DataFrame | None = None,
+                   elo_regress: float = 0.0) -> pd.DataFrame:
     """Construye la tabla gold de features por partido."""
-    m = compute_elo(matches)            # ordena por fecha + elo_*_pre
+    m = compute_elo(matches, regress=elo_regress)   # ordena por fecha + elo_*_pre
     m = _h2h(m).reset_index(drop=True)
     m["match_id"] = np.arange(len(m))
 
