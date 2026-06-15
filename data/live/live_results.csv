@@ -10,3 +10,6 @@ match_id,date,home_team,away_team,home_score,away_score,neutral,stage,ko_winner,
 20260614_germany_curacao,2026-06-14,Germany,Curaçao,7,1,True,group,,,,,4-2-3-1,5-3-2
 20260614_netherlands_japan,2026-06-14,Netherlands,Japan,2,2,True,group,,,,,4-3-3,3-4-2-1
 20260614_ivory-coast_ecuador,2026-06-14,Ivory Coast,Ecuador,1,0,True,group,,,,,,
+20260614_sweden_tunisia,2026-06-14,Sweden,Tunisia,5,1,True,group,,,,,,
+20260615_spain_cape-verde,2026-06-15,Spain,Cape Verde,0,0,True,group,,,,,,
+20260615_belgium_egypt,2026-06-15,Belgium,Egypt,1,1,True,group,,,,,,
