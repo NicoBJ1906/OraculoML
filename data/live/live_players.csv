@@ -46,3 +46,10 @@ match_id,date,team,player,event,minute
 20260615_belgium_egypt,2026-06-15,Egypt,Emam Ashour,goal,20
 20260615_saudi-arabia_uruguay,2026-06-15,Saudi Arabia,Abdulelah Al-Amri,goal,40
 20260615_saudi-arabia_uruguay,2026-06-15,Uruguay,Maximiliano Araújo,goal,79
+20260615_iran_new-zealand,2026-06-15,New Zealand,Elijah Just,goal,7
+20260615_iran_new-zealand,2026-06-15,Iran,Ramin Rezaeian,goal,31
+20260615_iran_new-zealand,2026-06-15,New Zealand,Elijah Just,goal,54
+20260615_iran_new-zealand,2026-06-15,Iran,Mohammad Mohebbi,goal,64
+20260615_iran_new-zealand,2026-06-15,New Zealand,Chris Wood,assist,7
+20260615_iran_new-zealand,2026-06-15,New Zealand,Chris Wood,assist,54
+20260615_iran_new-zealand,2026-06-15,Iran,Ramin Rezaeian,assist,64
