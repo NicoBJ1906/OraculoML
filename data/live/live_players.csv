@@ -60,9 +60,6 @@ match_id,date,team,player,event,minute
 20260616_argentina_algeria,2026-06-16,Argentina,Lionel Messi,goal,17
 20260616_argentina_algeria,2026-06-16,Argentina,Lionel Messi,goal,60
 20260616_argentina_algeria,2026-06-16,Argentina,Lionel Messi,goal,76
-20260616_norway_iraq,2026-06-16,Norway,Erling Haaland,goal,18
-20260616_norway_iraq,2026-06-16,Norway,Erling Haaland,goal,35
-20260616_norway_iraq,2026-06-16,Norway,Leo Østigård,goal,70
 20260616_austria_jordan,2026-06-16,Austria,Romano Schmid,goal,21
 20260616_austria_jordan,2026-06-16,Jordan,Ali Olwan,goal,40
 20260616_austria_jordan,2026-06-16,Austria,Marko Arnautovic,penalty,75
@@ -79,3 +76,6 @@ match_id,date,team,player,event,minute
 20260617_uzbekistan_colombia,2026-06-17,Colombia,Daniel Muñoz,goal,25
 20260617_uzbekistan_colombia,2026-06-17,Colombia,Luis Díaz,goal,55
 20260617_uzbekistan_colombia,2026-06-17,Colombia,Jáminton Campaz,goal,90
+20260616_iraq_norway,2026-06-16,Norway,Erling Haaland,goal,18
+20260616_iraq_norway,2026-06-16,Norway,Erling Haaland,goal,35
+20260616_iraq_norway,2026-06-16,Norway,Leo Østigård,goal,70
