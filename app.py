@@ -893,10 +893,12 @@ def build_bracket_payload(live_tok: str, n_sims: int) -> dict:
         # marginal junto al ganador del head-to-head confunde (un equipo
         # puede ocupar menos el slot y aun así ser favorito del cruce)
         win, pwin, s1, s2 = None, None, None, None
+        played = False
         if t1 and t2:
             win = ko_real.get(frozenset((t1, t2)))
             if win:
                 pwin = 100
+                played = True
             else:
                 host = HOST_OF_COUNTRY[_ground_country(m.get("ground", ""))]
                 date = pd.Timestamp(m["date"])
@@ -919,7 +921,7 @@ def build_bracket_payload(live_tok: str, n_sims: int) -> dict:
             "src1": srcs[0], "src2": srcs[1],
             "t1": {"team": t1, "flag": _flag_url(t1), "pct": s1} if t1 else None,
             "t2": {"team": t2, "flag": _flag_url(t2), "pct": s2} if t2 else None,
-            "win": win, "pwin": pwin,
+            "win": win, "pwin": pwin, "played": played,
             "cands1": ss["t1"][:3], "cands2": ss["t2"][:3],
             "date": pd.Timestamp(m["date"]).strftime("%d %b").upper(),
             "ground": m.get("ground", "")})
@@ -1432,7 +1434,56 @@ tab_result = _tabs.get("Ingresar resultado")
 # ------------------------------------------------ TAB 1: predicciones
 with tab_pred:
     if pending.empty:
-        st.info("No quedan fixtures de fase de grupos pendientes.")
+        # Fase de grupos completa: mostramos los cruces de eliminatorias ya
+        # definidos (clasificados reales + ocupantes modales del Monte Carlo)
+        # con su pronóstico. A medida que se ingresan resultados de KO, la
+        # siguiente ronda se va resolviendo y aparece aquí (invariante U4).
+        st.success("Fase de grupos completa. Pronósticos de eliminatorias "
+                   "según se van definiendo los cruces:")
+        _nsims = st.session_state.get("nsims_bracket", 5000)
+        with st.spinner("Resolviendo cruces y calculando pronósticos…"):
+            _bp = build_bracket_payload(STORE.token(), _nsims)
+        _shown = 0
+        for _rnd in _bp["rounds"]:
+            _ms = [m for m in _rnd["matches"]
+                   if m["t1"] and m["t2"] and not m["played"]]
+            if not _ms:
+                continue
+            st.markdown(f"#### {_rnd['label']}")
+            for _i in range(0, len(_ms), 3):
+                _cols = st.columns(3)
+                for _col, _m in zip(_cols, _ms[_i:_i + 3]):
+                    _t1, _t2 = _m["t1"], _m["t2"]
+                    _win, _pwin = _m["win"], _m["pwin"]
+                    _s1 = _t1["pct"] if _t1["pct"] is not None else 50
+                    _s2 = _t2["pct"] if _t2["pct"] is not None else 50
+                    def _side(_t, _pct, _is_win):
+                        _fl = (f'<img src="{_t["flag"]}" style="width:22px;'
+                               f'border-radius:3px;vertical-align:middle">'
+                               if _t["flag"] else "")
+                        _cls = "color:#ff5470;font-weight:700" if _is_win else ""
+                        return (f'<div style="display:flex;justify-content:'
+                                f'space-between;{_cls}"><span>{_fl} '
+                                f'{esc(_t["team"])}</span><span>{_pct}%</span></div>')
+                    _col.markdown(
+                        f'<div class="glass" style="padding:14px">'
+                        f'<div class="mc-meta">{_m["date"]} · '
+                        f'{esc(_m["ground"])}</div>'
+                        f'{_side(_t1, _s1, _win == _t1["team"])}'
+                        f'<div style="opacity:.5;text-align:center;'
+                        f'font-size:.7rem;margin:2px 0">vs</div>'
+                        f'{_side(_t2, _s2, _win == _t2["team"])}'
+                        f'<div class="mc-meta" style="margin-top:8px">'
+                        f'Avanza (proy.): <b>{esc(_win)}</b> · {_pwin}%</div>'
+                        f'</div>', unsafe_allow_html=True)
+            _shown += len(_ms)
+        st.caption("Los equipos sin cruce real definido son los ocupantes más "
+                   "probables del Monte Carlo; el % de cada lado es P(avanza) "
+                   "en ese cruce. Usa la pestaña Cuadrangular para el cuadro "
+                   "completo y Eliminatorias para simular un cruce manual.")
+        if _shown == 0:
+            st.info("Aún no hay cruces de eliminatorias con ambos equipos "
+                    "definidos.")
     else:
         # jornadas derivadas del calendario REAL: la n-ésima vez que un
         # equipo juega es su Fecha n (los rivales van siempre parejos)
