@@ -29,6 +29,28 @@ ELO_SIGMA = 75.0
 ROUND_OF = {"Round of 32": "R32", "Round of 16": "R16",
             "Quarter-final": "QF", "Semi-final": "SF", "Final": "F"}
 
+# Tabla oficial FIFA de asignación de los 8 mejores terceros a los slots del
+# bracket (C(12,4)=495 combinaciones). El greedy por ranking NO la replica:
+# qué tercero enfrenta a cada ganador de grupo depende de QUÉ 4 grupos quedan
+# SIN tercero clasificado. Mapeamos cada combinación de los 4 grupos eliminados
+# (frozenset de letras) -> {conjunto de grupos permitidos del slot -> grupo del
+# tercero que lo ocupa}. Sólo se incluyen las combinaciones realmente ocurridas
+# en el torneo; si la combinación no está, se cae al greedy (comportamiento
+# previo, usado en simulaciones con grupos aún abiertos).
+THIRD_ALLOCATION: dict[frozenset, dict[frozenset, str]] = {
+    # Mundial 2026: terceros eliminados A, C, G, H (clasifican B,D,E,F,I,J,K,L)
+    frozenset("ACGH"): {
+        frozenset("ABCDF"): "D",   # 1E vs 3 → Paraguay (D)
+        frozenset("CDFGH"): "F",   # 1I vs 3 → Sweden (F)
+        frozenset("CEFHI"): "E",   # 1A vs 3 → Ecuador (E)
+        frozenset("EHIJK"): "K",   # 1L vs 3 → DR Congo (K)
+        frozenset("BEFIJ"): "B",   # 1D vs 3 → Bosnia (B)
+        frozenset("AEHIJ"): "I",   # 1G vs 3 → Senegal (I)
+        frozenset("EFGIJ"): "J",   # 1B vs 3 → Algeria (J)
+        frozenset("DEIJL"): "L",   # 1K vs 3 → Ghana (L)
+    },
+}
+
 # Sede del partido de eliminatoria -> país (para localía de anfitriones)
 _MX_CITIES = ("Mexico City", "Guadalajara", "Zapopan", "Monterrey", "Guadalupe")
 _CA_CITIES = ("Toronto", "Vancouver")
@@ -228,8 +250,21 @@ class TournamentSimulator:
     def _assign_thirds(self, slots: list[tuple], thirds: list[tuple],
                        pos: dict) -> None:
         """Asigna los 8 mejores terceros a los slots '3X/Y/Z' del bracket.
-        Greedy por ranking respetando los grupos permitidos de cada slot."""
+
+        Si la combinación de los 4 grupos SIN tercero clasificado está en la
+        tabla oficial FIFA (THIRD_ALLOCATION), asigna determinísticamente como
+        manda el reglamento. Si no (p. ej. simulaciones con grupos abiertos),
+        cae al greedy por ranking respetando los grupos permitidos del slot.
+        """
         best8 = thirds[:8]
+        by_group = {t[4]: t for t in best8}       # grupo -> tupla del tercero
+        elim = frozenset(set(self.groups) - set(by_group))
+        table = THIRD_ALLOCATION.get(elim)
+        if table is not None:
+            for code, allowed in slots:
+                g = table[frozenset(allowed)]     # grupo del tercero (oficial)
+                pos[code] = by_group[g][5]
+            return
         used: set[str] = set()
         for code, allowed in slots:
             pick = next((t for t in best8
