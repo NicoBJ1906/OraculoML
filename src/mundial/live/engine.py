@@ -11,7 +11,7 @@ Construcción:
 En predicción, los hooks del engine base aplican:
 - elo_for        -> Elo base + momentum - sanciones/lesiones
 - _adjust_lambdas-> gamma de goles del torneo y efecto altitud
-- _adjust_probs  -> corrección de frecuencia de empates
+- _adjust_probs  -> corrección de empates + temperatura KO (O3)
 """
 from __future__ import annotations
 
@@ -53,7 +53,10 @@ class LiveEngine(PredictionEngine):
             self.corrector.add_record(
                 r.date, d["lambda_home"], d["lambda_away"],
                 float(d["probs"]["D"]), hs, as_,
-                xg_home=r.xg_home, xg_away=r.xg_away)
+                xg_home=r.xg_home, xg_away=r.xg_away,
+                probs=(float(d["probs"]["A"]), float(d["probs"]["D"]),
+                       float(d["probs"]["H"])),
+                stage=str(getattr(r, "stage", "group") or "group"))
             self.live_audit.append({
                 "date": pd.Timestamp(r.date),
                 "home_team": r.home_team, "away_team": r.away_team,
@@ -89,7 +92,7 @@ class LiveEngine(PredictionEngine):
     def _adjust_probs(self, date, p):
         if not self._live_ready:
             return p
-        return self.corrector.adjust_probs(p)
+        return self.corrector.adjust_probs(p, ko=self.corrector.is_ko(date))
 
     def live_summary(self) -> dict:
         return self.corrector.summary()

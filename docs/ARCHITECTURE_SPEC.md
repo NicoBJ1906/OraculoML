@@ -115,7 +115,8 @@ Ingesta UI ──► LiveStore (data/live/*.csv)
                   ▼ predicción (cards, Eliminatorias, Monte Carlo)
           elo_for()        = elo base + momentum − sanciones/lesiones
           _adjust_lambdas() = λ × gamma_goles × factor_altitud(ciudad)
-          _adjust_probs()   = P(empate) × draw_mult, renormalizado
+          _adjust_probs()   = P(empate) × draw_mult, renormalizado;
+                              en eliminatorias además p^(1/ko_temp) renorm.
 ```
 
 ### Parámetros del estado (`live/state.py`)
@@ -139,11 +140,21 @@ cada modificador con su etiqueta y puntos (contrato de XAI de la UI).
 | factor | prior (shrinkage) | clip |
 |---|---|---|
 | gamma (ritmo de goles) | N0 = 20 goles esperados | [0.85, 1.18] |
-| draw_mult (empates) | K0 = 25 partidos | [0.80, 1.25] |
+| draw_mult (empates) | K0 = 12 partidos | [0.80, 1.55] |
 | alt_mult (sedes ≥ 1400 m) | 1.05, N0 = 8 partidos | [0.90, 1.20] |
+| ko_temp (afilado en KO) | 1.0, N0 = 15 partidos KO | [0.80, 1.10] |
 
 **Invariante O1**: con 0 partidos, todos los factores = 1.0 (modelo base
 intacto). **Invariante O2**: la capa live JAMÁS llama `model.fit()`.
+**Invariante O3 (afilado KO, 2026-07-05)**: en el backtest del torneo los
+favoritos de eliminatoria rinden por encima de su probabilidad declarada
+(15/19 avanzaron; ll KO 0.690 → 0.625 con T=0.75). `ko_temp` se ajusta por
+grid-search de log-loss SOLO sobre predicciones honestas pre-partido de
+partidos KO ya jugados, con shrinkage hacia 1.0 (N0=15) y clip [0.80, 1.10];
+se aplica `p^(1/T)` renormalizado únicamente a predicciones de eliminatoria
+(fecha ≥ primer KO registrado), después de draw_mult y antes del mercado.
+Sin partidos KO registrados, T=1.0 (O1 se conserva). Los partidos de grupos
+JAMÁS se afilan (el óptimo medido en grupos es T=1.0).
 
 **Invariante M5 (mercado)**: las cuotas 1X2 (`data/live/live_odds.csv`, tab
 Mercado) se de-vig con `engine.devig()` (1/cuota normalizado) y se mezclan en

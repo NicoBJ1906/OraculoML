@@ -10,6 +10,10 @@ corrección con shrinkage bayesiano — con 0 partidos los factores son 1.0
 - draw_mult  : frecuencia de empates observada vs predicha.
 - alt_mult   : efecto altitud en sedes >= 1400 m (CDMX 2240 m,
                Guadalajara 1566 m), prior suave 1.05 refinado online.
+- ko_temp    : temperatura de afilado SOLO para eliminatorias (O3). Los
+               favoritos KO del torneo rinden por encima de su probabilidad
+               declarada; se ajusta por log-loss sobre los KO ya jugados
+               con shrinkage fuerte hacia 1.0 y nunca toca los grupos.
 
 Todos los factores van capados: la corrección nunca puede volverse más
 grande que la señal que la sustenta.
@@ -38,6 +42,9 @@ DRAW_CAP = 1.55    # techo de draw_mult (subido de 1.25 por el mismo motivo)
 ALT_PRIOR = 1.05   # prior: ~5% más goles en altura
 ALT_N0 = 8.0
 XG_BLEND = 0.35    # peso del xG en los "goles observados"
+KO_T_N0 = 15.0     # prior de la temperatura KO (partidos de evidencia)
+KO_T_CLIP = (0.80, 1.10)
+KO_T_GRID = np.arange(0.60, 1.21, 0.05)
 
 
 def altitude_of(city: str | None) -> int:
@@ -52,12 +59,20 @@ class OnlineCorrector:
         self.gamma = 1.0
         self.draw_mult = 1.0
         self.alt_mult = ALT_PRIOR
+        self.ko_temp = 1.0
+        self.ko_start: pd.Timestamp | None = None
         self.n = 0
+        self.n_ko = 0
 
     def add_record(self, date, lambda_home: float, lambda_away: float,
                    p_draw: float, hs: int, as_: int,
-                   xg_home=None, xg_away=None, city: str | None = None) -> None:
-        """Registra un partido jugado con la predicción hecha ANTES de él."""
+                   xg_home=None, xg_away=None, city: str | None = None,
+                   probs: tuple | None = None, stage: str = "group") -> None:
+        """Registra un partido jugado con la predicción hecha ANTES de él.
+
+        probs = (pA, pD, pH) pre-partido del ensemble; stage identifica los
+        KO ('R32'/'R16'/'QF'/'SF'/'F') para ajustar ko_temp (O3).
+        """
         obs_h = float(hs) if _na(xg_home) else \
             (1 - XG_BLEND) * hs + XG_BLEND * float(xg_home)
         obs_a = float(as_) if _na(xg_away) else \
@@ -66,6 +81,9 @@ class OnlineCorrector:
             "date": pd.Timestamp(date), "pred": lambda_home + lambda_away,
             "obs": obs_h + obs_a, "p_draw": p_draw,
             "draw": int(hs == as_), "alt": altitude_of(city),
+            "ko": str(stage).strip().lower() != "group",
+            "pvec": probs,
+            "out": 2 if hs > as_ else (0 if as_ > hs else 1),  # orden A,D,H
         })
 
     def fit(self) -> None:
@@ -95,6 +113,25 @@ class OnlineCorrector:
             self.alt_mult = float(np.clip(
                 w * ratio + (1 - w) * ALT_PRIOR, 0.90, 1.20))
 
+        # temperatura KO (O3): grid de log-loss sobre los KO jugados,
+        # con shrinkage hacia 1.0 — nunca se ajusta con grupos.
+        ko = df[df["ko"] & df["pvec"].notna()]
+        self.n_ko = len(ko)
+        if self.n_ko:
+            self.ko_start = ko["date"].min()
+            P = np.array([list(v) for v in ko["pvec"]], dtype=float)
+            y = ko["out"].to_numpy()
+            idx = np.arange(len(y))
+            lls = []
+            for t in KO_T_GRID:
+                q = P ** (1.0 / t)
+                q /= q.sum(axis=1, keepdims=True)
+                lls.append(-np.log(np.clip(q[idx, y], 1e-9, None)).mean())
+            t_fit = float(KO_T_GRID[int(np.argmin(lls))])
+            w = self.n_ko / (self.n_ko + KO_T_N0)
+            self.ko_temp = float(np.clip(
+                w * t_fit + (1 - w) * 1.0, *KO_T_CLIP))
+
     # ------------------------------------------------ aplicación
     def adjust_lambdas(self, lh: float, la: float,
                        city: str | None = None) -> tuple[float, float]:
@@ -103,22 +140,34 @@ class OnlineCorrector:
             m *= self.alt_mult
         return lh * m, la * m
 
-    def adjust_probs(self, p: np.ndarray) -> np.ndarray:
-        """p en orden ['A','D','H']. Reescala P(empate) y renormaliza."""
-        if self.draw_mult == 1.0:
-            return p
-        q = p.copy()
-        q[1] = min(q[1] * self.draw_mult, 0.90)
-        rest = q[0] + q[2]
-        if rest > 0:
-            scale = (1.0 - q[1]) / rest
-            q[0] *= scale
-            q[2] *= scale
-        return q / q.sum()
+    def is_ko(self, date) -> bool:
+        """True si la fecha cae en eliminatorias ya iniciadas del torneo."""
+        if self.ko_start is None:
+            return False
+        return bool(pd.Timestamp(date) >= self.ko_start)
+
+    def adjust_probs(self, p: np.ndarray, ko: bool = False) -> np.ndarray:
+        """p en orden ['A','D','H']. Reescala P(empate), renormaliza y en
+        eliminatorias afila con la temperatura KO (O3)."""
+        q = p
+        if self.draw_mult != 1.0:
+            q = p.copy()
+            q[1] = min(q[1] * self.draw_mult, 0.90)
+            rest = q[0] + q[2]
+            if rest > 0:
+                scale = (1.0 - q[1]) / rest
+                q[0] *= scale
+                q[2] *= scale
+            q = q / q.sum()
+        if ko and self.ko_temp != 1.0:
+            q = q ** (1.0 / self.ko_temp)
+            q = q / q.sum()
+        return q
 
     def summary(self) -> dict:
         return {"n": self.n, "gamma": self.gamma,
-                "draw_mult": self.draw_mult, "alt_mult": self.alt_mult}
+                "draw_mult": self.draw_mult, "alt_mult": self.alt_mult,
+                "ko_temp": self.ko_temp, "n_ko": self.n_ko}
 
 
 def _na(x) -> bool:
