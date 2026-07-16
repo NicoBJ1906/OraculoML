@@ -695,71 +695,9 @@ inject_theme()
 inject_effects()          # Lenis + GSAP + fondo WebGL (degradable, spec §7)
 
 
-# --------------------------------------------- puerta de entrada (viewers)
-def _club_gate() -> None:
-    """Login de acceso general "El club de amigos de Nico": solo entra
-    quien tenga la clave (secret `club_password`). Independiente del
-    admin (auth.py, intacto). Sin el secret configurado no hay puerta
-    (local / tests / CI siguen igual)."""
-    try:
-        clave = str(st.secrets["club_password"])
-    except Exception:
-        return
-    if st.session_state.get("club_ok"):
-        return
-    _, mid, _ = st.columns([1, 2, 1])
-    with mid:
-        import base64
-        foto = ROOT / "assets" / "club.jpeg"
-        img = ('<img src="data:image/jpeg;base64,'
-               + base64.b64encode(foto.read_bytes()).decode()
-               + '" style="width:100%;max-width:380px;border-radius:18px;'
-               'box-shadow:0 10px 32px var(--shadow)">'
-               ) if foto.exists() else '<div style="font-size:2.6rem">⚽</div>'
-        st.markdown(
-            '<div class="glass" style="text-align:center;margin-top:6vh;'
-            f'padding:30px 26px">{img}'
-            '<h2 class="hero" style="font-size:1.7rem;margin:14px 0 4px">'
-            'El oráculo personal de Nicolás</h2>'
-            '<p style="color:var(--muted);font-size:.9rem;margin-bottom:0">'
-            'Solo para mis amiguitos — solo quien me conoce sabe la '
-            'clave.</p></div>',
-            unsafe_allow_html=True)
-        tries = st.session_state.get("club_tries", 0)
-        if tries >= 3:
-            st.error("🚫 Tres intentos fallidos — ya no puedes entrar. "
-                     "Habla con Nicolás si crees que mereces otra "
-                     "oportunidad.")
-            st.stop()
-        pw = st.text_input("Clave del club", type="password",
-                           key="club_pw", label_visibility="collapsed",
-                           placeholder="🔮 Clave para ver el futuroooo")
-        if st.button("📻 Mami prenda la radio, encienda la tele 📺", type="primary",
-                     use_container_width=True):
-            if pw == clave:
-                st.session_state["club_ok"] = True
-                st.rerun()
-            st.session_state["club_tries"] = tries + 1
-            left = 2 - tries
-            st.error("¡Esa no es la clave mi crack! Keep trying 😎"
-                     + (f" (te quedan {left} intentos)" if left > 0
-                        else " (último intento agotado)"))
-            if tries + 1 >= 3:
-                st.rerun()
-        qr = ROOT / "assets" / "qr.png"
-        if qr.exists():
-            st.markdown(
-                '<div style="text-align:center;margin-top:18px">'
-                '<p style="color:var(--muted);font-size:.85rem;'
-                'margin-bottom:8px">¿Quejas? Escanea este QR 👇</p>'
-                '<img src="data:image/png;base64,'
-                + base64.b64encode(qr.read_bytes()).decode()
-                + '" style="width:130px;border-radius:12px;background:#fff;'
-                'padding:6px"></div>', unsafe_allow_html=True)
-    st.stop()
-
-
-_club_gate()
+# Puerta "club de amigos" (club_password) ELIMINADA a pedido del usuario
+# 2026-07-15 (spec §8): la app es pública. El secret club_password en Cloud
+# queda sin efecto; puede borrarse de share.streamlit.io cuando se quiera.
 
 
 # ----------------------------------------------------------------- carga
