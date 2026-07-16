@@ -336,3 +336,40 @@ la app sigue 100% funcional.
 Generado por `scripts/06_build_rosters.py` (lógica testeable en
 `mundial.ingest.rosters.build_rosters`). Los selectores de jugador de la UI
 leen SOLO de aquí (anti-typos), con opción de escape "Otro…" para texto libre.
+
+## 10. Tab "Final" (dashboard de definición — F1..F4)
+
+Dashboard maestro de los 4 semifinalistas cuando solo quedan la Final y el
+tercer puesto. Toda la matemática vive en `mundial.predict.finalists`
+(funciones puras, testeables sin Streamlit); la UI solo formatea.
+
+- **F1 — Probabilidades EXACTAS, no Monte Carlo.** Con 2 partidos
+  restantes el espacio de resultados es enumerable: P(campeón) =
+  `p_home_advances` de `engine.predict_match` sobre la Final (incluye
+  prórroga/penales vía `tiebreak_prob`); P(3.º) ídem sobre el partido por
+  el tercer puesto. `podium_probs` devuelve la matriz equipo × puesto
+  (cada fila y cada puesto suman 1). `podium_scenarios` enumera los 4
+  desenlaces (final ⊗ tercer puesto, independientes) y suma 1.
+- **F2 — Equipos derivados de los datos, nunca hardcodeados.** Finalistas
+  = ganadores (`ko_winner` o marcador) de las filas `stage == "SF"` de
+  `live_results.csv`, en orden cronológico (SF1 → slot local de la Final,
+  regla FIFA); perdedores → tercer puesto. Si no hay 2 SF cargadas, la
+  tab degrada a un `st.info` (nunca revienta).
+- **F3 — Bota de Oro (aproximación declarada).** Goles restantes de cada
+  candidato ~ Poisson(λ_equipo_restante × share), share = goles del
+  jugador / goles del equipo en el torneo, λ del `match_distribution`
+  del partido que le queda (ya incluye correcciones online y mercado).
+  `golden_boot_race` convoluciona las Poisson truncadas (K=12) de forma
+  independiente — la correlación intra-equipo (Kane/Bellingham) se
+  desprecia y la UI lo declara. Jugadores eliminados = masa puntual.
+  Se reporta P(goleador en solitario) y P(al menos compartido); el
+  desempate oficial (asistencias/minutos) NO se modela.
+- **F4 — El camino usa `live_audit` (anti-leakage).** La sección "cómo
+  llegaron" muestra por partido la predicción PRE-partido registrada en
+  `LiveEngine.live_audit` (la misma del corrector online) — nunca
+  predicciones recalculadas con el estado actual. Elo/forma/ajustes
+  actuales salen de `elo_for`/`form`/`state.explain` y se etiquetan como
+  estado actual, no como pronóstico histórico.
+- UI: mismas reglas de §5 (CSS vars del tema, sin colores hardcodeados,
+  móvil solo dentro del único `@media` de `BASE_CSS`, cachés keyed por
+  `STORE.token()`).

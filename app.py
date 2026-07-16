@@ -941,6 +941,186 @@ def build_bracket_payload(live_tok: str, n_sims: int) -> dict:
 
 
 @st.cache_data
+def build_final_payload(live_tok: str) -> dict | None:
+    """Payload del dashboard de definición (spec §10).
+
+    F2: los equipos se DERIVAN de las filas stage=="SF" de live_results
+    (ganador → Final, perdedor → 3.er puesto; SF1 ocupa el slot local).
+    F1: probabilidades exactas de los 2 partidos restantes (sin Monte
+    Carlo). F3: Bota de Oro por Poisson truncadas. F4: el camino usa las
+    predicciones pre-partido de live_audit, nunca el estado actual.
+    Devuelve None si aún no hay 2 semifinales cargadas (la UI degrada)."""
+    from mundial.predict.finalists import (
+        golden_boot_race, podium_probs, podium_scenarios,
+    )
+
+    eng = build_engine(live_tok)
+    lv = STORE.results()
+    if not len(lv) or "stage" not in lv.columns:
+        return None
+    sf = lv[lv.stage.astype(str).str.upper() == "SF"].sort_values(
+        "date", kind="stable")
+    if len(sf) < 2:
+        return None
+
+    def _winner(r) -> str:
+        w = getattr(r, "ko_winner", None)
+        if isinstance(w, str) and w:
+            return w
+        return (r.home_team if int(r.home_score) > int(r.away_score)
+                else r.away_team)
+
+    sf_rows = list(sf.itertuples(index=False))[:2]
+    finalists = tuple(_winner(r) for r in sf_rows)
+    third = tuple(r.away_team if _winner(r) == r.home_team else r.home_team
+                  for r in sf_rows)
+
+    ko = load_ko_raw()
+    m_final = next(m for m in ko if m["round"] == "Final")
+    m_third = next((m for m in ko if m["round"] == "Match for third place"),
+                   m_final)
+    d_final = pd.Timestamp(m_final["date"])
+    d_third = pd.Timestamp(m_third["date"])
+    sf_last = max(pd.Timestamp(r.date) for r in sf_rows)
+
+    def _played(a: str, b: str):
+        """Fila live del cruce {a,b} posterior a las semis (Final o 3.er
+        puesto ya ingresados), sin depender de la etiqueta de stage."""
+        for r in lv.itertuples(index=False):
+            if ({r.home_team, r.away_team} == {a, b}
+                    and pd.Timestamp(r.date) > sf_last):
+                return r
+        return None
+
+    pf = eng.predict_match(d_final, finalists[0], finalists[1], True)
+    pt = eng.predict_match(d_third, third[0], third[1], True)
+    dist_f = eng.match_distribution(d_final, finalists[0], finalists[1], True)
+    dist_t = eng.match_distribution(d_third, third[0], third[1], True)
+
+    def _match_view(p: dict, dist: dict, teams: tuple[str, str],
+                    meta: dict, real) -> dict:
+        mat = dist["matrix"]
+        n = mat.shape[0]
+        i, j = np.meshgrid(np.arange(n), np.arange(n), indexing="ij")
+        return {
+            "teams": teams, "p": p,
+            "date": pd.Timestamp(meta["date"]).strftime("%d %b").upper(),
+            "ground": meta.get("ground", ""),
+            "matrix": mat[:6, :6].tolist(),
+            "p_btts": float(mat[1:, 1:].sum()),
+            "p_over25": float(mat[(i + j) >= 3].sum()),
+            "real": None if real is None else {
+                "score": f"{int(real.home_score)}–{int(real.away_score)}",
+                "winner": _winner(real)},
+        }
+
+    fp = _played(*finalists)
+    tp = _played(*third)
+    # probabilidades de puesto: exactas si falta el partido, 0/1 si ya se jugó
+    p_final_home = (pf["p_home_advances"] if fp is None
+                    else float(_winner(fp) == finalists[0]))
+    p_third_home = (pt["p_home_advances"] if tp is None
+                    else float(_winner(tp) == third[0]))
+    podium = podium_probs(finalists, p_final_home, third, p_third_home)
+    scenarios = podium_scenarios(finalists, p_final_home, third, p_third_home)
+
+    # ---- Bota de Oro (F3): share del jugador × λ del partido que le queda
+    pl = STORE.players()
+    tally = (pl[pl.event.isin(["goal", "penalty"])]
+             .groupby(["player", "team"]).size().reset_index(name="goals"))
+    team_goals = tally.groupby("team")["goals"].sum().to_dict()
+    lam_left = {
+        finalists[0]: 0.0 if fp is not None else dist_f["lambda_home"],
+        finalists[1]: 0.0 if fp is not None else dist_f["lambda_away"],
+        third[0]: 0.0 if tp is not None else dist_t["lambda_home"],
+        third[1]: 0.0 if tp is not None else dist_t["lambda_away"],
+    }
+    alive = tally[tally.team.isin(lam_left) & (tally.goals >= 4)]
+    out = tally[~tally.team.isin(lam_left) & (tally.goals >= 6)]
+    contenders = [
+        {"player": r.player, "team": r.team, "goals": int(r.goals),
+         "lam": lam_left.get(r.team, 0.0)
+         * float(r.goals) / max(team_goals.get(r.team, 1), 1)}
+        for r in pd.concat([alive, out]).itertuples(index=False)
+    ]
+    race = golden_boot_race(contenders) if contenders else pd.DataFrame()
+    if len(race):
+        assists = pl[pl.event == "assist"].groupby("player").size()
+        race["assists"] = race.player.map(assists).fillna(0).astype(int)
+
+    # ---- el camino de los 4 (F4): live_audit + stage/ko_winner del store
+    def _kow(r) -> str:
+        """ko_winner saneado: la celda vacía llega como NaN (truthy!)."""
+        w = getattr(r, "ko_winner", None)
+        return w if isinstance(w, str) else ""
+
+    meta_by_pair = {(r.home_team, r.away_team): (str(r.stage), _kow(r))
+                    for r in lv.itertuples(index=False)}
+    stage_lbl = {"GROUP": "GRUPO", "R32": "16.OS", "R16": "8.OS",
+                 "QF": "4.TOS", "SF": "SEMIS", "F": "FINAL"}
+    journeys: dict[str, dict] = {}
+    for team in (*finalists, *third):
+        steps, hits, n_ko_extra = [], 0, 0
+        surprise = None          # triunfo con menor prob pre-partido
+        for m in eng.live_audit:
+            if team not in (m["home_team"], m["away_team"]):
+                continue
+            is_home = m["home_team"] == team
+            rival = m["away_team"] if is_home else m["home_team"]
+            gf, gc = ((m["home_score"], m["away_score"]) if is_home
+                      else (m["away_score"], m["home_score"]))
+            stage, kow = meta_by_pair.get((m["home_team"], m["away_team"]),
+                                          ("group", ""))
+            p_team = m["p_home"] if is_home else m["p_away"]
+            probs = {"H": m["p_home"], "D": m["p_draw"], "A": m["p_away"]}
+            real = "H" if gf > gc else ("A" if gc > gf else "D")
+            if not is_home:
+                real = {"H": "A", "A": "H", "D": "D"}[real]
+            hit = max(probs, key=probs.get) == real
+            hits += hit
+            won = gf > gc or (gf == gc and kow == team)
+            if gf == gc and kow:
+                n_ko_extra += 1
+            if won and (surprise is None or p_team < surprise[1]):
+                surprise = (rival, p_team, f"{gf}–{gc}")
+            steps.append({
+                "stage": stage_lbl.get(stage.upper(), stage.upper()),
+                "rival": rival, "gf": int(gf), "gc": int(gc),
+                "res": "G" if won else ("E" if gf == gc else "P"),
+                "pens": bool(gf == gc and kow), "p_pre": p_team, "hit": hit,
+            })
+        gf_t = sum(s["gf"] for s in steps)
+        gc_t = sum(s["gc"] for s in steps)
+        date_next = d_final if team in finalists else d_third
+        exp = eng.state.explain(team, date_next)
+        journeys[team] = {
+            "steps": steps, "hits": hits, "gf": gf_t, "gc": gc_t,
+            "won": sum(s["res"] == "G" for s in steps),
+            "draw": sum(s["res"] == "E" for s in steps),
+            "lost": sum(s["res"] == "P" for s in steps),
+            "ko_extra": n_ko_extra, "surprise": surprise,
+            "elo": eng.elo_for(team, date_next), "momentum": exp["momentum"],
+            "adjust": exp["total"],
+        }
+
+    return {
+        "finalists": finalists, "third": third,
+        "final": _match_view(pf, dist_f, finalists, m_final, fp),
+        "third_match": _match_view(pt, dist_t, third, m_third, tp),
+        "podium": podium, "scenarios": scenarios, "race": race,
+        "journeys": journeys,
+        "n_audit": len(eng.live_audit),
+        "hits_audit": sum(
+            max({"H": m["p_home"], "D": m["p_draw"], "A": m["p_away"]},
+                key=lambda k: {"H": m["p_home"], "D": m["p_draw"],
+                               "A": m["p_away"]}[k])
+            == ("H" if m["home_score"] > m["away_score"]
+                else "A" if m["away_score"] > m["home_score"] else "D")
+            for m in eng.live_audit),
+    }
+
+
+@st.cache_data
 def backtest_last(team: str, n: int = 5) -> pd.DataFrame:
     """Backtesting honesto (spec §9): reconstruye la predicción PRE-partido
     con las features de la capa Gold (anti-leakage verificado en el
@@ -1414,12 +1594,13 @@ pending = fixtures[~fixtures.apply(
 
 # ---- RBAC (spec §8): viewers no construyen el tab de ingesta
 IS_ADMIN = auth.is_admin()
-_labels = ["Próximos partidos", "Aciertos", "Mercado", "Líderes",
+_labels = ["Final", "Próximos partidos", "Aciertos", "Mercado", "Líderes",
            "Cuadrangular", "Eliminatorias", "Camino al título", "Tablas",
            "Auditoría"]
 if IS_ADMIN:
     _labels.insert(1, "Ingresar resultado")
 _tabs = dict(zip(_labels, st.tabs(_labels)))
+tab_final = _tabs["Final"]
 tab_pred = _tabs["Próximos partidos"]
 tab_hits = _tabs["Aciertos"]
 tab_market = _tabs["Mercado"]
@@ -2111,3 +2292,260 @@ with tab_audit:
             "ideal": chart.index.to_series()})
         st.line_chart(chart, x_label="confianza del modelo (%)",
                       y_label="acierto real (%)")
+
+# ------------------------------------------------ TAB 0: la definición
+with tab_final:
+    _fd = build_final_payload(STORE.token())
+    if _fd is None:
+        st.info("Esta pestaña se enciende al cargar las dos semifinales: "
+                "con solo la Final y el 3.er puesto pendientes, el espacio "
+                "de desenlaces es exacto (sin Monte Carlo).")
+    else:
+        (_fa, _fb), (_ta, _tb) = _fd["finalists"], _fd["third"]
+        _pod = _fd["podium"].set_index("team")
+
+        st.markdown(
+            '<div class="form-card"><h4>🏆 La definición del Mundial</h4>'
+            '<p style="color:var(--muted);font-size:.82rem;margin:0">'
+            'Quedan dos partidos. Aquí no hay Monte Carlo: probabilidades '
+            'EXACTAS del ensemble (con correcciones online, mercado y '
+            'prórroga/penales por Elo) sobre los únicos desenlaces '
+            'posibles.</p></div>', unsafe_allow_html=True)
+
+        # ---- cards de los 2 partidos que quedan
+        def _fin_card(view: dict, title: str) -> str:
+            _h, _a = view["teams"]
+            _p = view["p"]
+            _adv_h, _adv_a = _p["p_home_advances"], _p["p_away_advances"]
+            def _side(team, adv, best):
+                _w = "font-weight:800" if best else "opacity:.85"
+                return (f'<div style="display:flex;justify-content:'
+                        f'space-between;align-items:center;{_w};'
+                        f'font-size:1.05rem;margin:4px 0">'
+                        f'<span>{flag_img(team, 26)} {esc(team)}</span>'
+                        f'<span>{100 * adv:.0f}%</span></div>')
+            if view["real"]:
+                _win = view["real"]["winner"]
+                _p_pre = _adv_h if _win == _h else _adv_a
+                _body = (
+                    f'<div style="text-align:center;margin:8px 0">'
+                    f'<div style="font-size:1.7rem;font-weight:900">'
+                    f'{flag_img(_h, 26)} {view["real"]["score"]} '
+                    f'{flag_img(_a, 26)}</div>'
+                    f'<div style="font-weight:800;color:var(--accent)">'
+                    f'Ganó {esc(_win)}</div>'
+                    f'<div class="mc-meta">el modelo le daba '
+                    f'{100 * _p_pre:.0f}%</div></div>')
+            else:
+                _sc, _psc = _p["score_pred"]
+                _body = (
+                    _side(_h, _adv_h, _adv_h >= _adv_a)
+                    + '<div style="opacity:.5;text-align:center;'
+                      'font-size:.7rem">vs</div>'
+                    + _side(_a, _adv_a, _adv_a > _adv_h)
+                    + f'<div class="mc-meta" style="margin-top:8px">90&prime;: '
+                      f'{esc(_h)} {100 * _p["p_home"]:.0f}% · empate '
+                      f'{100 * _p["p_draw"]:.0f}% · {esc(_a)} '
+                      f'{100 * _p["p_away"]:.0f}%</div>'
+                    + f'<div class="mc-meta">goles esperados '
+                      f'{_p["lambda_home"]:.2f} – {_p["lambda_away"]:.2f} · '
+                      f'si {"hay empate a 90&prime;" if _p["pred"] == "Empate" else "gana " + esc(_p["pred"])}, '
+                      f'lo más probable: {_sc.replace("-", "–")} '
+                      f'({100 * _psc:.0f}%)</div>')
+            return (f'<div class="glass" style="padding:16px">'
+                    f'<div class="mc-meta">{title} · {view["date"]} · '
+                    f'{esc(view["ground"])}</div>{_body}</div>')
+
+        _c1, _c2 = st.columns(2)
+        _c1.markdown(_fin_card(_fd["final"], "GRAN FINAL"),
+                     unsafe_allow_html=True)
+        _c2.markdown(_fin_card(_fd["third_match"], "TERCER PUESTO"),
+                     unsafe_allow_html=True)
+
+        _k1, _k2, _k3, _k4 = st.columns(4)
+        _k1.metric(f"{_fa} campeón", f"{100 * _pod.loc[_fa, 'p1']:.0f}%")
+        _k2.metric(f"{_fb} campeón", f"{100 * _pod.loc[_fb, 'p1']:.0f}%")
+        _k3.metric("Final a prórroga/penales",
+                   f"{100 * _fd['final']['p']['p_draw']:.0f}%",
+                   help="P(empate a los 90'). Si pasa, el desempate se "
+                        "aproxima por Elo comprimido (TIEBREAK_DAMP).")
+        _k4.metric("Aciertos 1X2 del modelo en el torneo",
+                   f"{_fd['hits_audit']}/{_fd['n_audit']}",
+                   f"{100 * _fd['hits_audit'] / max(_fd['n_audit'], 1):.0f}%")
+
+        # ---- podio: matriz equipo × puesto (exacta, filas suman 1)
+        st.subheader("Probabilidades de podio")
+        _show = _fd["podium"].rename(columns={
+            "team": "Selección", "p1": "Campeón", "p2": "Subcampeón",
+            "p3": "3.er puesto", "p4": "4.º puesto"})
+        st.markdown(tbl(_show, flags={"Selección"},
+                        bars={"Campeón", "Subcampeón", "3.er puesto",
+                              "4.º puesto"}), unsafe_allow_html=True)
+
+        # ---- los 4 desenlaces posibles con probabilidad conjunta
+        st.subheader("Los 4 desenlaces posibles")
+        st.caption("Final ⊗ tercer puesto (independientes): el espacio "
+                   "completo de podios, ordenado por probabilidad.")
+        _mets = ("🥇", "🥈", "🥉", "4.º")
+        _sc_cols = st.columns(4)
+        for _col, _s in zip(_sc_cols, _fd["scenarios"]):
+            _rows_html = "".join(
+                f'<div style="display:flex;gap:6px;align-items:center;'
+                f'margin:3px 0;font-size:.86rem">'
+                f'<span style="width:24px">{_m}</span>'
+                f'{flag_img(_t, 18)} <span>{esc(_t)}</span></div>'
+                for _m, _t in zip(_mets, _s["podium"]))
+            _col.markdown(
+                f'<div class="glass" style="padding:14px">'
+                f'<div class="podium-pct">{100 * _s["p"]:.1f}%</div>'
+                f'{_rows_html}</div>', unsafe_allow_html=True)
+
+        # ---- la final bajo el microscopio (matriz de marcadores exacta)
+        st.subheader("La final bajo el microscopio")
+
+        def _heat(view: dict) -> str:
+            _m = view["matrix"]
+            _pmax = max(max(_r) for _r in _m) or 1.0
+            _h, _a = view["teams"]
+            _head = "".join(f'<th style="font-weight:600">{_j}</th>'
+                            for _j in range(6))
+            _body = []
+            for _i in range(6):
+                _cells = []
+                for _j in range(6):
+                    _pv = _m[_i][_j]
+                    _mix = int(round(86 * _pv / _pmax))
+                    _lbl = f"{100 * _pv:.1f}" if _pv >= 0.005 else "·"
+                    _cells.append(
+                        f'<td style="background:color-mix(in srgb, '
+                        f'var(--accent) {_mix}%, transparent);'
+                        f'text-align:center;padding:7px 2px;'
+                        f'border-radius:6px">{_lbl}</td>')
+                _body.append(f'<tr><th style="font-weight:600">{_i}</th>'
+                             + "".join(_cells) + "</tr>")
+            return (f'<div class="glass" style="padding:14px">'
+                    f'<div class="mc-meta">P(marcador exacto) % · filas '
+                    f'{flag_img(_h, 16)} · columnas {flag_img(_a, 16)}</div>'
+                    f'<div style="overflow-x:auto"><table style="width:100%;'
+                    f'border-collapse:separate;border-spacing:3px;'
+                    f'font-size:.74rem;color:var(--text)">'
+                    f'<thead><tr><th></th>{_head}</tr></thead>'
+                    f'<tbody>{"".join(_body)}</tbody></table></div></div>')
+
+        _mc1, _mc2 = st.columns([1.15, 1])
+        _mc1.markdown(_heat(_fd["final"]), unsafe_allow_html=True)
+        with _mc2:
+            _pfin = _fd["final"]["p"]
+            _top5 = _pfin["scorelines"][:5]
+            _pmax5 = _top5[0][1] if _top5 else 1.0
+            _chips = "".join(
+                f'<div class="sl-card{" top" if _i == 0 else ""}">'
+                f'<div class="sl-tag">'
+                f'{"🎯 más probable" if _i == 0 else f"#{_i + 1}"}</div>'
+                f'<div class="sl-score">{_s.replace("-", " – ")}</div>'
+                f'<div class="sl-pct">{100 * _pr:.1f}%</div>'
+                f'<div class="sl-bar">'
+                f'<div style="width:{100 * _pr / _pmax5:.0f}%"></div></div>'
+                f'</div>'
+                for _i, (_s, _pr) in enumerate(_top5))
+            st.markdown(
+                f'<div class="glass"><div class="mc-meta">MARCADORES MÁS '
+                f'PROBABLES · {esc(_fa)} – {esc(_fb)}</div>'
+                f'<div class="sl-grid">{_chips}</div>'
+                f'<div class="mc-meta" style="margin-top:10px">'
+                f'Ambos marcan {100 * _fd["final"]["p_btts"]:.0f}% · '
+                f'Más de 2.5 goles {100 * _fd["final"]["p_over25"]:.0f}% · '
+                f'Elo efectivo {esc(_fa)} {_pfin["elo_home"]:.0f} / '
+                f'{esc(_fb)} {_pfin["elo_away"]:.0f}</div></div>',
+                unsafe_allow_html=True)
+
+        # ---- Bota de Oro
+        st.subheader("Carrera por la Bota de Oro")
+        _race = _fd["race"]
+        if len(_race):
+            _rshow = _race.rename(columns={
+                "player": "Jugador", "team": "Selección", "goals": "Goles",
+                "assists": "Asist.", "lam": "xG restante",
+                "p_top_solo": "Bota en solitario",
+                "p_top_shared": "Al menos compartida"})
+            _rshow["xG restante"] = _rshow["xG restante"].map(
+                lambda x: f"{x:.2f}")
+            st.markdown(tbl(_rshow[["Jugador", "Selección", "Goles",
+                                    "Asist.", "xG restante",
+                                    "Bota en solitario",
+                                    "Al menos compartida"]],
+                            flags={"Selección"},
+                            bars={"Bota en solitario",
+                                  "Al menos compartida"}),
+                        unsafe_allow_html=True)
+            st.caption("Goles restantes de cada jugador ~ Poisson(goles "
+                       "esperados de su equipo en el partido que le queda × "
+                       "su cuota de los goles del equipo en el torneo). "
+                       "Aproximación declarada: jugadores independientes "
+                       "(la correlación Kane–Bellingham se desprecia) y el "
+                       "desempate oficial (asistencias, luego minutos) NO "
+                       "se modela — las asistencias mostradas son las "
+                       "registradas en la ingesta.")
+        else:
+            st.info("Sin goleadores registrados todavía.")
+
+        # ---- cómo llegaron: el camino de los 4
+        st.subheader("Cómo llegaron — el camino de los 4")
+        st.caption("Cada línea muestra la predicción PRE-partido del modelo "
+                   "(la misma que alimentó al corrector online, sin "
+                   "recalcular) y si acertó el 1X2. 🟢 ganó · 🟡 empató "
+                   "· 🔴 perdió · (des.) = avanzó por prórroga/penales.")
+        _RES_DOT = {"G": "🟢", "E": "🟡", "P": "🔴"}
+        for _pair, _rol in ((_fd["finalists"], "FINALISTA"),
+                            (_fd["third"], "POR EL 3.ER PUESTO")):
+            _jc = st.columns(2)
+            for _col, _t in zip(_jc, _pair):
+                _j = _fd["journeys"][_t]
+                _lines = "".join(
+                    f'<div style="display:flex;justify-content:'
+                    f'space-between;gap:8px;align-items:center;'
+                    f'margin:4px 0;font-size:.84rem">'
+                    f'<span style="display:flex;gap:6px;align-items:center">'
+                    f'<span class="mc-meta" style="width:52px">'
+                    f'{esc(_st["stage"])}</span>'
+                    f'{flag_img(_st["rival"], 16)} {esc(_st["rival"])}</span>'
+                    f'<span style="white-space:nowrap">'
+                    f'{_st["gf"]}–{_st["gc"]}'
+                    f'{" (des.)" if _st["pens"] else ""} '
+                    f'{_RES_DOT[_st["res"]]} '
+                    f'<span class="mc-meta">{100 * _st["p_pre"]:.0f}%</span> '
+                    f'{"✓" if _st["hit"] else "✗"}</span></div>'
+                    for _st in _j["steps"])
+                _sur = _j["surprise"]
+                _sur_txt = (f'Su triunfo más improbable: {_sur[2]} a '
+                            f'{esc(_sur[0])} (el modelo le daba '
+                            f'{100 * _sur[1]:.0f}%).' if _sur else "")
+                _extra = (f' · {_j["ko_extra"]} definido(s) en '
+                          f'prórroga/penales' if _j["ko_extra"] else "")
+                _col.markdown(
+                    f'<div class="glass" style="padding:16px">'
+                    f'<div style="display:flex;justify-content:'
+                    f'space-between;align-items:center;margin-bottom:6px">'
+                    f'<span style="font-weight:800;font-size:1.05rem">'
+                    f'{flag_img(_t, 24)} {esc(_t)}</span>'
+                    f'<span class="mc-meta">{_rol}</span></div>'
+                    f'<div class="mc-meta" style="margin-bottom:8px">'
+                    f'{_j["won"]}G-{_j["draw"]}E-{_j["lost"]}P · '
+                    f'GF {_j["gf"]} / GC {_j["gc"]}{_extra} · Elo efectivo '
+                    f'{_j["elo"]:.0f} (momentum {_j["momentum"]:+.0f}, '
+                    f'ajuste total {_j["adjust"]:+.0f})</div>'
+                    f'{_lines}'
+                    f'<div class="mc-meta" style="margin-top:8px">'
+                    f'El modelo acertó {_j["hits"]}/{len(_j["steps"])} de '
+                    f'sus partidos. {_sur_txt}</div></div>',
+                    unsafe_allow_html=True)
+
+        st.caption("⚙️ **Metodología:** ensemble Logística + Poisson "
+                   "Dixon-Coles con Elo/forma/H2H/valor de plantilla, "
+                   "momentum del torneo (K=45), corrección bayesiana online "
+                   "(goles, empates, altitud), mezcla con cuotas de mercado "
+                   "donde existan y desempate de prórroga/penales por Elo "
+                   "comprimido. Con las semifinales cargadas, campeón/"
+                   "subcampeón dependen SOLO de la Final y 3.º/4.º SOLO del "
+                   "tercer puesto: las probabilidades de esta pestaña son "
+                   "exactas bajo el modelo, no frecuencias simuladas.")

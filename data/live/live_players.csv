@@ -252,3 +252,43 @@ match_id,date,team,player,event,minute
 20260705_mexico_england,2026-07-05,Mexico,Julián Quiñones,goal,42
 20260705_mexico_england,2026-07-05,England,Harry Kane,penalty,60
 20260705_mexico_england,2026-07-05,Mexico,Raúl Jiménez,penalty,69
+20260622_france_iraq,2026-06-22,France,Ousmane Dembélé,goal,75
+20260701_england_dr-congo,2026-07-01,England,Harry Kane,goal,75
+20260701_england_dr-congo,2026-07-01,England,Harry Kane,goal,86
+20260701_england_dr-congo,2026-07-01,DR Congo,Brian Cipenga,goal,7
+20260702_spain_austria,2026-07-02,Spain,Pedro Porro,goal,66
+20260703_argentina_cape-verde,2026-07-03,Cape Verde,Diney Borges,own_goal,111
+20260706_portugal_spain,2026-07-06,Spain,Mikel Merino,goal,93
+20260706_united-states_belgium,2026-07-06,Belgium,Charles De Ketelaere,goal,8
+20260706_united-states_belgium,2026-07-06,United States,Malik Tillman,goal,35
+20260706_united-states_belgium,2026-07-06,Belgium,Charles De Ketelaere,goal,37
+20260706_united-states_belgium,2026-07-06,Belgium,Hans Vanaken,goal,57
+20260706_united-states_belgium,2026-07-06,Belgium,Romelu Lukaku,goal,92
+20260707_argentina_egypt,2026-07-07,Egypt,Yasser Ibrahim,goal,15
+20260707_argentina_egypt,2026-07-07,Egypt,Zizo,goal,67
+20260707_argentina_egypt,2026-07-07,Argentina,Cristian Romero,goal,79
+20260707_argentina_egypt,2026-07-07,Argentina,Lionel Messi,assist,79
+20260707_argentina_egypt,2026-07-07,Argentina,Lionel Messi,goal,84
+20260707_argentina_egypt,2026-07-07,Argentina,Enzo Fernández,goal,92
+20260707_argentina_egypt,2026-07-07,Argentina,Lautaro Martínez,assist,92
+20260709_france_morocco,2026-07-09,France,Kylian Mbappé,goal,60
+20260709_france_morocco,2026-07-09,France,Ousmane Dembélé,goal,66
+20260709_france_morocco,2026-07-09,France,Kylian Mbappé,assist,66
+20260710_spain_belgium,2026-07-10,Spain,Fabián Ruiz,goal,30
+20260710_spain_belgium,2026-07-10,Belgium,Charles De Ketelaere,goal,41
+20260710_spain_belgium,2026-07-10,Spain,Mikel Merino,goal,88
+20260711_norway_england,2026-07-11,Norway,Andreas Schjelderup,goal,36
+20260711_norway_england,2026-07-11,England,Jude Bellingham,goal,45
+20260711_norway_england,2026-07-11,England,Jude Bellingham,goal,93
+20260711_argentina_switzerland,2026-07-11,Argentina,Alexis Mac Allister,goal,10
+20260711_argentina_switzerland,2026-07-11,Argentina,Lionel Messi,assist,10
+20260711_argentina_switzerland,2026-07-11,Switzerland,Dan Ndoye,goal,67
+20260711_argentina_switzerland,2026-07-11,Argentina,Julián Álvarez,goal,112
+20260711_argentina_switzerland,2026-07-11,Argentina,Lautaro Martínez,goal,121
+20260714_france_spain,2026-07-14,Spain,Mikel Oyarzabal,penalty,22
+20260714_france_spain,2026-07-14,Spain,Pedro Porro,goal,58
+20260715_england_argentina,2026-07-15,England,Anthony Gordon,goal,55
+20260715_england_argentina,2026-07-15,England,Morgan Rogers,assist,55
+20260715_england_argentina,2026-07-15,Argentina,Enzo Fernández,goal,85
+20260715_england_argentina,2026-07-15,Argentina,Lautaro Martínez,goal,92
+20260715_england_argentina,2026-07-15,Argentina,Lionel Messi,assist,92
