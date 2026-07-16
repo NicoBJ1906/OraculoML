@@ -288,6 +288,13 @@ la app sigue 100% funcional.
 
 ## 8. RBAC (`src/mundial/auth.py`)
 
+> **DESACTIVADO a pedido del usuario (2026-07-15):** `app.py` fuerza
+> `IS_ADMIN = True` y no monta `auth.login_entry()` — la app queda
+> pública SIN contraseña, ingesta incluida (riesgo aceptado: cualquiera
+> con la URL puede cargar/borrar resultados y sincronizar al repo).
+> `auth.py` y sus tests quedan intactos; para reactivar, restaurar las
+> dos líneas marcadas "spec §8" en `app.py`.
+
 | Rol | Acceso | Activación |
 |---|---|---|
 | `viewer` (default) | Próximos, Líderes, Cuadro, Eliminatorias, Camino, Tablas, XAI | ninguna |

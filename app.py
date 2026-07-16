@@ -39,7 +39,6 @@ import pandas as pd
 import streamlit as st
 
 from frontend import inject_effects, render_bracket
-from mundial import auth
 from mundial.display import display_pred
 from mundial.live.engine import LiveEngine
 from mundial.live.store import LiveStore
@@ -1570,12 +1569,12 @@ fixtures = load_fixtures()
 live = STORE.results()
 engine = build_engine(STORE.token())
 
-hcol, acol, tcol = st.columns([4.4, 1.1, .9], vertical_alignment="center")
+hcol, tcol = st.columns([5.5, .9], vertical_alignment="center")
 hcol.markdown('<h1 class="hero">Oráculo personal de Nicolás — '
               '<span class="grad">Mundial 2026</span></h1>',
               unsafe_allow_html=True)
-with acol:
-    auth.login_entry()       # spec §8: login modal, sin sidebar
+# RBAC desactivado a pedido (spec §8): para reactivar, volver a montar
+# auth.login_entry() en una columna intermedia.
 tcol.toggle("Modo claro", key="light_mode")
 
 ls = engine.live_summary()
@@ -1592,8 +1591,9 @@ played_keys = set(zip(live.home_team, live.away_team)) if len(live) else set()
 pending = fixtures[~fixtures.apply(
     lambda r: (r.home_team, r.away_team) in played_keys, axis=1)]
 
-# ---- RBAC (spec §8): viewers no construyen el tab de ingesta
-IS_ADMIN = auth.is_admin()
+# ---- RBAC desactivado a pedido del usuario 2026-07-15 (spec §8): la app
+# queda pública con ingesta incluida. Para reactivar: auth.is_admin().
+IS_ADMIN = True
 _labels = ["Final", "Próximos partidos", "Aciertos", "Mercado", "Líderes",
            "Cuadrangular", "Eliminatorias", "Camino al título", "Tablas",
            "Auditoría"]
